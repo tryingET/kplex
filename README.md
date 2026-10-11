@@ -326,6 +326,8 @@ node-image:: [[image.jpg]]
 
 Images stay deliberately small so they do not make the Plex expand. On desktop, hover the image for a larger preview with its original aspect ratio. The property names can be changed in **Settings → K-Plex → Visual styling → Node styling**.
 
+Vault images work by default. HTTP(S) images require **Allow remote node images** in the same settings section, which is off by default. Displaying a remote image contacts its host with your IP address and the image URL. Turning permission off prevents new loads; it cannot undo requests already sent or clear the browser's cache. Blocked remote values fall back to an available local image or the normal node label. This permission is separate from explicitly opening or embedding a web page.
+
 An image referenced only through the thumbnail/node-image fields is treated as presentation metadata, so it is not also shown as an inferred child. If the same image is linked independently through normal content or another ontology, it remains a normal graph node as well.
 
 Image attachments such as JPG, PNG, GIF, WebP and SVG files can also be shown directly as nodes. Choose whether attachment nodes display **file name**, **thumbnail + file name** (default), or **image only** in the same settings section.

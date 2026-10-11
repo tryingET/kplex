@@ -406,6 +406,7 @@ for (const file of [
   "src/core/plex/viewPresentation.ts",
   "src/core/plex/internalHotkeys.ts",
   "src/core/plex/markdownZoomPreferences.ts",
+  "src/core/plex/nodeImagePolicy.ts",
   "src/core/plex/shortcutPresentation.ts",
   "src/core/contracts/fieldName.ts",
   "src/core/graph/model.ts",
@@ -453,6 +454,7 @@ for (const file of [
   "src/index/RelationEvidence.ts",
   "src/index/RelationResolver.ts",
   "src/index/GraphState.ts",
+  "src/index/remapGraphEndpoint.ts",
   "src/index/IndexSnapshot.ts",
   "src/index/IndexedDbCache.ts",
   "src/index/SourceFacts.ts",
@@ -1097,7 +1099,7 @@ for (const axis of ["width", "height"]) {
   KplexPlugin.prototype.ensureAdjacentFileLeafSize.call(context, anchor, pane);
   assert.deepEqual(writes, [], "Sizing must not cross unrelated workspace splits");
 }
-const { persistedPageFromGraphPage, addPersistedPageToState, hydratePersistedRelations, computeIndexSettingsSignature, computeVaultSignature, persistedDeclarationFromEvidence } = require(join(temp, "src/index/IndexSnapshot.js"));
+const { persistedPageFromGraphPage, addPersistedPageToState, hydratePersistedPageRelations, hydratePersistedRelations, hydrateGraphState, computeIndexSettingsSignature, computeVaultSignature, persistedDeclarationFromEvidence } = require(join(temp, "src/index/IndexSnapshot.js"));
 const { createGraphState } = require(join(temp, "src/index/GraphState.js"));
 const { buildCentralSectionExpansion, canExpandCentralSections, projectCentralSectionExpansion } = require(join(temp, "src/index/SectionExpansion.js"));
 const { parseBodyMetadata, parseBodyMetadataCore, parseBodyMetadataCooperative } = require(join(temp, "src/index/fieldParser.js"));
@@ -2943,6 +2945,42 @@ try {
     return restored;
   };
   try {
+    // An old/mixed direction generation retains physical vocabulary but cannot certify its rows
+    // as a complete current-policy scope. Full hydration reuses evidence, not Markdown reads.
+    const legacyDirectionPages = savedPages.map(saved => structuredClone(saved));
+    const legacyDirectionCenter = legacyDirectionPages.find(saved => saved.path === "Note A.md");
+    delete legacyDirectionCenter.resolvedDirectionPolicyVersion;
+    for (const relation of legacyDirectionCenter.relations) relation.direction = LinkDirection.BOTH;
+    const legacyDirectionState = createGraphState();
+    for (const saved of legacyDirectionPages) addPersistedPageToState(legacyDirectionState, saved, app);
+    legacyDirectionState.pages.get("Note A.md").neighbours.set("stale", {});
+    assert.equal(hydratePersistedPageRelations(legacyDirectionState, legacyDirectionCenter), false);
+    assert.equal(legacyDirectionState.pages.get("Note A.md").neighbours.size, 0, "Unmarked rows clear any retained stale neighbors");
+    for (const unsupported of [0, 2, "1", null]) {
+      assert.equal(hydratePersistedPageRelations(legacyDirectionState,
+        { ...legacyDirectionCenter, resolvedDirectionPolicyVersion: unsupported }), false);
+    }
+    assert.equal(hydratePersistedRelations(legacyDirectionState, legacyDirectionPages), false, "Mixed generations must enter canonical resolution");
+    const legacyDirectionRestored = hydrateGraphState({ version: 1, createdAt: 1, vaultSignature: "fixture", settingsSignature: "fixture",
+      pages: legacyDirectionPages, evidence: snapshotEvidence, discoveredFields: [] }, app);
+    for (const [path, page] of index.state.pages) if (!page.transient) {
+      assert.deepEqual([...legacyDirectionRestored.pages.get(path).neighbours].map(([target, relation]) => [target, relation.direction]),
+        [...page.neighbours].map(([target, relation]) => [target, relation.direction]));
+    }
+    const oldDirections = makeRestoreIndex();
+    oldDirections.indexedDb.getPages = async (_generation, paths) => new Map(legacyDirectionPages.filter(saved => paths.includes(saved.path)).map(saved => [saved.path, saved]));
+    oldDirections.indexedDb.iterateSnapshotPages = async (_meta, onPage, current) => {
+      for (const saved of legacyDirectionPages) { if (!current()) return false; onPage(saved); }
+      return current();
+    };
+    assert.equal(await oldDirections.publishSnapshotPreview(snapshotMeta, ["Note A.md"], () => true, () => true), true);
+    assert.equal(oldDirections.state.pages.get("Note A.md").neighbours.size, 0, "Old arrow rows cannot enter a targeted preview");
+    assert.equal(oldDirections.cachedSnapshotPages.has(oldDirections.state.pages.get("Note A.md")), false, "Empty legacy preview cannot masquerade as a complete cached scope");
+    assert.equal((await oldDirections.restoreIndexedDbSnapshot(["Note A.md"])).restored, true);
+    assert.equal((await oldDirections.waitForSnapshotHydration()).restored, true);
+    assert.equal(oldDirections.state.pages.get("Note A.md").neighbours.get("Note B.md").direction,
+      index.state.pages.get("Note A.md").neighbours.get("Note B.md").direction);
+
     const normal = makeRestoreIndex();
     let firstWarmPublication = null;
     const unsubscribeWarmPreview = normal.subscribe(() => {
@@ -3271,6 +3309,9 @@ try {
   noteA.stat.mtime += 1000;
   noteACache.frontmatter.thumbnail = "https://example.com/thumb.png";
   let visuals = await index.resolveNodeVisuals([index.get("Note A.md")]);
+  assert.equal(visuals.has("Note A.md"), false, "Remote imagery requires explicit consent, including old settings without the key");
+  settings.allowRemoteNodeImages = true;
+  visuals = await index.resolveNodeVisuals([index.get("Note A.md")]);
   assert.equal(visuals.get("Note A.md")?.mode, "thumbnail");
   assert.equal(visuals.get("Note A.md")?.src, "https://example.com/thumb.png");
   assert.equal("visual" in index.get("Note A.md"), false, "Node visuals must not expand the semantic GraphPage index");
@@ -3280,6 +3321,9 @@ try {
   visuals = await index.resolveNodeVisuals([index.get("Note A.md")]);
   assert.equal(visuals.get("Note A.md")?.mode, "replace");
   assert.equal(visuals.get("Note A.md")?.src, "https://example.com/replacement.png");
+  settings.allowRemoteNodeImages = false;
+  visuals = await index.resolveNodeVisuals([index.get("Note A.md")]);
+  assert.equal(visuals.has("Note A.md"), false, "Revocation rejects cached remote visuals without changing file mtime");
 
   const imageFile = new TFile("Visuals/Picture.jpg", noteA.stat.mtime + 1000);
   files.set(imageFile.path, imageFile);
@@ -4250,6 +4294,88 @@ try {
   assert.equal(index.get(pastedFile.path), pastedPage);
   assert.equal(contents.get(pastedFile.path), pastedText);
   assert(index.search("large paste").some((page) => page.path === pastedFile.path));
+
+  // Issue 114: exercise actual source collection, patch publication, neighborhood projection and
+  // the production Edge JSX from both centers. Geometry doubles do not classify direction.
+  {
+    const arrowPaths = ["Arrow A-Star.md", "Arrow Uniform Cost Search.md"];
+    const arrowRoot = new TFolder("");
+    for (const path of arrowPaths) {
+      const file = new TFile(path, mtime++);
+      file.parent = arrowRoot; arrowRoot.children.push(file); files.set(path, file);
+      const target = path === arrowPaths[0] ? "Arrow Uniform Cost Search" : "Arrow A-Star";
+      contents.set(path, `# Related\n[[${target}#Related]]\n`);
+      file.stat.size = contents.get(path).length;
+      caches.set(path, { frontmatter: path === arrowPaths[0] ? { Implements: `[[${target}]]` } : {}, tags: [], links: [] });
+      resolvedLinks[path] = { [path === arrowPaths[0] ? arrowPaths[1] : arrowPaths[0]]: path === arrowPaths[0] ? 2 : 1 };
+      unresolvedLinks[path] = {};
+    }
+    const arrowSettings = { ...settings, hierarchy: { ...settings.hierarchy, leftFriends: ["Implements"] },
+      baseLinkStyle: { ...settings.baseLinkStyle, startArrowHead: "none", endArrowHead: "arrow" }, hierarchyLinkStyles: {} };
+    const arrowApp = { ...app, vault: { ...app.vault,
+      getRoot: () => arrowRoot, getMarkdownFiles: () => arrowPaths.map(path => files.get(path)),
+      getFiles: () => arrowPaths.map(path => files.get(path)),
+      getFolderByPath: path => path === "" ? arrowRoot : null,
+    }, metadataCache: { ...metadataCache,
+      resolvedLinks: Object.fromEntries(arrowPaths.map(path => [path, resolvedLinks[path]])),
+      unresolvedLinks: Object.fromEntries(arrowPaths.map(path => [path, {}])),
+    } };
+    const arrowPlugin = { ...plugin, app: arrowApp, settings: arrowSettings };
+    const arrowIndex = new GraphIndex(arrowPlugin, arrowApp);
+    const edgeStart = plexGraphSource.indexOf("function Edge({");
+    const edgeEnd = plexGraphSource.indexOf("/** Compose the deterministic Plex scene", edgeStart);
+    const markerStart = plexGraphSource.indexOf("function markerFor(");
+    const markerEnd = plexGraphSource.indexOf("/** Translate the displayed zone heading", markerStart);
+    assert(edgeStart >= 0 && edgeEnd > edgeStart && markerStart >= 0 && markerEnd > markerStart);
+    const edgeJs = ts.transpileModule(plexGraphSource.slice(markerStart, markerEnd) + plexGraphSource.slice(edgeStart, edgeEnd), {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None, jsx: ts.JsxEmit.React },
+    }).outputText;
+    const Edge = new Function("React", "LinkDirection", "gatesForEdge", "gatePoint", "edgeGeometry", "alphaHexToCss", "relationLabel", `${edgeJs}; return Edge;`)(
+      { createElement: (type, props, ...children) => ({ type, props, children }) }, LinkDirection,
+      () => ({ source: "left", target: "right" }), () => ({ x: 0, y: 0 }),
+      () => ({ d: "M0 0L1 1", midpoint: { x: 0, y: 0 } }), value => value, value => value,
+    );
+    try {
+      assert.equal(await arrowIndex.rebuild(), true);
+      for (const showInferredNodes of [false, true]) for (const inverseArrowDirection of [false, true]) {
+        arrowSettings.showInferredNodes = showInferredNodes; arrowSettings.inverseArrowDirection = inverseArrowDirection;
+        for (let center = 0; center < arrowPaths.length; center++) {
+          const sourcePath = arrowPaths[center], targetPath = arrowPaths[1 - center];
+          const neighbors = arrowIndex.getNeighborhood(sourcePath);
+          const neighbor = neighbors.leftFriends.find(item => item.page.path === targetPath);
+          assert(neighbor, "Defined friend remains visible when inferred nodes are hidden");
+          assert.equal(neighbor.relationType, RelationType.DEFINED);
+          const scene = buildScene(neighbors, arrowIndex, arrowSettings);
+          const edge = scene.edges.find(item => item.sourcePath === sourcePath && item.targetPath === targetPath);
+          assert(edge, "Defined edge is projected from the selected center");
+          assert.equal(edge.direction, center === 0 ? LinkDirection.FROM : LinkDirection.TO);
+          const rendered = Edge({ edge, nodes: new Map(scene.nodes.map(node => [node.page.path, node])), inverseArrowDirection,
+            connectorStyle: "straight", crossLinkOpacity: 1, highlighted: false, dimmed: false });
+          const visiblePath = rendered.children.find(child => child?.props?.className === "kplex-edge-visible");
+          const expectedStart = center === 0 ? !inverseArrowDirection : inverseArrowDirection;
+          assert.equal(visiblePath.props.markerStart, expectedStart ? "url(#kplex-arrow)" : undefined);
+          assert.equal(visiblePath.props.markerEnd, expectedStart ? undefined : "url(#kplex-arrow)");
+          assert(arrowIndex.evidenceBetween(sourcePath, targetPath).some(item => item.sourceKind === "obsidian-link"));
+        }
+      }
+      caches.get(arrowPaths[1]).frontmatter.Implements = "[[Arrow A-Star]]";
+      files.get(arrowPaths[1]).stat.mtime += 1; resolvedLinks[arrowPaths[1]][arrowPaths[0]] = 2;
+      assert.equal((await arrowIndex.patchMarkdownPaths([arrowPaths[1]])).outcome, "patched");
+      assert.equal(arrowIndex.state.pages.get(arrowPaths[0]).neighbours.get(arrowPaths[1]).direction, LinkDirection.BOTH);
+      delete caches.get(arrowPaths[1]).frontmatter.Implements;
+      files.get(arrowPaths[1]).stat.mtime += 1; resolvedLinks[arrowPaths[1]][arrowPaths[0]] = 1;
+      assert.equal((await arrowIndex.patchMarkdownPaths([arrowPaths[1]])).outcome, "patched");
+      assert.equal(arrowIndex.state.pages.get(arrowPaths[0]).neighbours.get(arrowPaths[1]).direction, LinkDirection.FROM);
+      const rebuilt = new GraphIndex(arrowPlugin, arrowApp);
+      try {
+        assert.equal(await rebuilt.rebuild(), true);
+        for (const source of arrowPaths) {
+          const target = arrowPaths.find(path => path !== source);
+          assert.deepEqual(canonicalPair(arrowIndex, source, target), canonicalPair(rebuilt, source, target));
+        }
+      } finally { rebuilt.destroy(); }
+    } finally { arrowIndex.destroy(); }
+  }
 
   console.log("K-Plex indexing fixture: assertions 1–33 + P1–P17 PASS");
   console.log("Central section expansion fixture: assertions 34–50 PASS");

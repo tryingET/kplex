@@ -28,6 +28,8 @@
  * inputs notify a finite presentation consumer; observer failure cannot change source authority.
  * Background native body misses recheck foreground-acquired inputs after yielding priority, while
  * selected foreground callers retain their own lane and never wait on a paused background parser.
+ * Restart mtime drift rejects the retired body version without discarding a current-version parser
+ * input left by cancelled foreground work; ambiguous revisions and observed edits still force I/O.
  */
 import { yieldToHostTask } from "./yieldToHostTask";
 import { canonicalTagPaths } from "../../core/graph/tagPaths";
@@ -537,6 +539,8 @@ export class ObsidianSourceAcquisition {
    * On first restart inventory, compare current MetadataCache facts with durable source-local facts.
    * Upgrade accepted R1 owners in the same walk before any resolution fan-out. Offline alias/path/
    * create/delete drift marks only the changed source and proven referrers.
+   * A different mtime already excludes the retired parsed-body version. Preserve current-version
+   * optional inputs, but force native reads for same-mtime drift, incarnation changes and events.
    */
   private async reconcileRestartHostInventory(markdown: readonly TFile[], structuralOrder: ReadonlyMap<string, number>,
     current: () => boolean): Promise<boolean> {
@@ -599,7 +603,8 @@ export class ObsidianSourceAcquisition {
         changedPaths.add(file.path);
         const state = this.state(file);
         if (!state.dirty) { state.dirty = true; state.revision += 1; }
-        if (!samePhysical) state.bodyDirty = true;
+        if (!samePhysical && (head.physical.mtime === file.stat.mtime
+          || head.physical.ctime !== undefined && head.physical.ctime !== file.stat.ctime)) state.bodyDirty = true;
         for (const key of this.resolutionImpactKeys(file.path, durable.facts)) keys.add(key);
         for (const key of this.resolutionImpactKeys(file.path, now)) keys.add(key);
       }

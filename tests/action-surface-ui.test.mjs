@@ -19,6 +19,7 @@ export class Scope {
  handleKey(event,context){const actual=[event.ctrlKey?'Ctrl':null,event.metaKey?'Meta':null,event.altKey?'Alt':null,event.shiftKey?'Shift':null].filter(Boolean).sort().join('+');context??={key:event.key,modifiers:actual,vkey:event.key};for(const handler of this.handlers){const expected=handler.modifiers.map(value=>value==='Mod'?'Ctrl':value).sort().join('+');if(expected===actual&&(handler.key===null||handler.key===context.vkey||handler.key.toLowerCase()===event.key.toLowerCase()))return handler.dispatch(event,context)}return this.parent?.handleKey(event,context)}
 }
 export class Notice {constructor(message){window.testNotices.push(message)}}
+export class Menu {addItem(callback){const item={setTitle(){return this},setIcon(){return this},setDisabled(){return this},setChecked(){return this},onClick(){return this}};callback(item);return this}addSeparator(){return this}}
 function element(parent,tag,options={}){const el=document.createElement(tag);el.setText=text=>{el.textContent=text};el.addClass=(...names)=>el.classList.add(...names);el.createDiv=options=>element(el,'div',options);el.createSpan=options=>element(el,'span',options);if(options.text)el.textContent=options.text;if(options.cls)el.className=options.cls;for(const [key,value]of Object.entries(options.attr??{}))el.setAttribute(key,value);parent.append(el);return el}
 export class Modal {constructor(app){this.app=app;this.modalEl=document.createElement('div');this.modalEl.addClass=(...names)=>this.modalEl.classList.add(...names);this.titleEl={setText:()=>{}};this.contentEl=this.modalEl;
  this.contentEl.empty=()=>this.contentEl.replaceChildren();this.contentEl.createEl=(tag,options)=>element(this.contentEl,tag,options);this.contentEl.createDiv=options=>element(this.contentEl,'div',options);this.scope=new Scope()}
@@ -147,7 +148,8 @@ async function bundle() {
   const result = await build({ stdin: { resolveDir: process.cwd(), contents: `
     export {createElement,useRef} from 'react';
     export {createRoot} from 'react-dom/client'; export {flushSync} from 'react-dom';
-    export {Scope,scopes} from 'obsidian';
+    import React from 'react'; import {Menu} from 'obsidian';
+    export {Scope,scopes,Menu} from 'obsidian';
     export {usePlexActions} from './src/ui/usePlexActions';
     export {usePlexKeyboardNavigation} from './src/ui/usePlexKeyboardNavigation';
     export {usePlexTypeSelection,matchTypeSelection,nextTypeSelection} from './src/ui/usePlexTypeSelection';
@@ -165,6 +167,7 @@ async function bundle() {
     export {focusEmbeddedMarkdown,focusEmbeddedMarkdownView,registerEmbeddedMarkdownFocusTarget};
     export {CreateFolderNoteModal} from './src/ui/CreateFolderNoteModal';
     ${productionAppFocusActions()}
+    ${productionToolbarMenus()}
     ${productionEmbeddedActivation()}
     ${productionGraphSession()}
   ` }, bundle: true, write: false, platform: "browser", format: "iife", globalName: "sourceModules",
@@ -177,6 +180,108 @@ async function bundle() {
   });
   return result.outputFiles[0].text;
 }
+
+/** Compile the actual toolbar JSX, action adapters and menu callbacks; native menu rendering stays a host port. */
+function productionToolbarMenus() {
+  const filename = "src/ui/App.tsx";
+  const source = ts.createSourceFile(filename, readFileSync(new URL(`../${filename}`, import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const variables = new Map(), implementations = new Map(), controls = new Map();
+  /** Retain the actual toolbar onClick route, including its ref, rather than constructing a substitute button. */
+  const visit = node => {
+    if (ts.isVariableDeclaration(node) && ["uiAction", "showToolbarMenu", "showDocumentSyncMenu", "showSidecarMoveMenu"].includes(node.name.getText(source))) variables.set(node.name.getText(source), node.initializer.getText(source));
+    if (ts.isPropertyAssignment(node) && ['"view.sync.choose"', '"view.sidecar.position"'].includes(node.name.getText(source))) implementations.set(node.name.getText(source), node.initializer.getText(source));
+    if (ts.isJsxElement(node) && node.openingElement.tagName.getText(source) === "button") {
+      const click = node.openingElement.attributes.properties.find(attr => ts.isJsxAttribute(attr) && attr.name.getText(source) === "onClick");
+      for (const [id, name] of [["view.sync.choose", "SyncControl"], ["view.sidecar.position", "MoveControl"]]) if (click?.getText(source).includes(`runAction("${id}")`)) controls.set(name, node.getText(source));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  assert.equal(implementations.size, 2); assert.equal(controls.size, 2);
+  const helperImport = variables.has("showToolbarMenu") ? "import { toolbarMenuAnchor } from './src/ui/menuAnchor';" : "";
+  return ts.transpileModule(`${helperImport}
+    export function createToolbarMenuFixture({plugin,rootRef,syncMenuButtonRef,sidecarMoveButtonRef,hostLeaf,actions,page}){
+      const translate=key=>key, syncMode='off',syncTargetAvailable=false,syncTitle='Off',syncIcon='link',sidecarPosition='right',surface='tab';
+      const ObsidianIcon=()=>null,forceRender=()=>{},activate=()=>{},setDocumentSyncMode=mode=>plugin.effects.push(mode);
+      const runAction=id=>actions.dispatch({id,source:'toolbar',surfaceId:actions.surfaceId});
+      ${[...variables].map(([name,value])=>`const ${name}=${value};`).join('\n')}
+      return {implementations:{${[...implementations].map(([name,value])=>`${name}:${value}`).join(',')}},${[...controls].map(([name,value])=>`${name}:()=>(${value})`).join(',')}};
+    }`, { compilerOptions: { target: ts.ScriptTarget.ES2021, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React } }).outputText;
+}
+
+/** Exercise pointer/keyboard/palette/hotkey invocations on fresh owning-control geometry and retired surfaces. */
+test("toolbar menu actions anchor to live controls across pointer, keyboard, commands and surface disposal", async () => {
+  const browser = await chromiumHarness(await bundle());
+  try {
+    assert.equal(await browser.evaluate(`(async()=>{
+      const M=sourceModules,React={createElement:M.createElement},h=M.createElement;
+      window.React=React;
+      const check=(value,message)=>{if(!value)throw Error(message)},tick=()=>new Promise(done=>setTimeout(done,0));
+      const calls=[];
+      const manager=new M.ActionManager({readCommandContext:()=>({windowId:'main',preferredSurfaceId:'one'}),onError:error=>{throw error}});
+      const plugin={effects:[],settings:{sidecarPosition:'right'},getDocumentSyncMode:()=> 'off',hasDocumentSyncTarget:()=>false,
+        showKplexMenuAtPosition:(menu,position,doc,leaf)=>calls.push({position,doc,leaf}),showKplexMenuAtMouseEvent:()=>{throw Error('Shared action must resolve the control instead of a stale event')}};
+      const mount=(id,doc,left,top)=>{
+        const root=doc.createElement('div');root.style.cssText='position:fixed;left:'+left+'px;top:'+top+'px;width:500px;height:240px';doc.body.append(root);
+        const refs={rootRef:{current:root},syncMenuButtonRef:{current:null},sidecarMoveButtonRef:{current:null}},leaf={id};
+        const actions={surfaceId:id,dispatch:request=>manager.dispatch(request)};
+        const f=M.createToolbarMenuFixture({plugin,...refs,hostLeaf:leaf,actions,page:{file:{path:'Center.md'}}});
+        const react=M.createRoot(root);M.flushSync(()=>react.render(h('div',null,h(f.SyncControl),h(f.MoveControl))));
+        const buttons=root.querySelectorAll('button');buttons[0].style.cssText='position:absolute;left:350px;top:15px;width:30px;height:25px';buttons[1].style.cssText='position:absolute;left:410px;top:160px;width:30px;height:25px';
+        const readSnapshot=()=>({mounted:root.isConnected,visible:root.isConnected,windowId:id==='one'?'main':'popout',center:null,selected:null,focusRegion:'graph',commandFocusRegion:'graph',interactionRevision:0,historyBack:false,historyForward:false,editorAvailable:false});
+        const release=manager.registerSurface({id,generation:1,readSnapshot,implementations:f.implementations});
+        const owner={id,doc,leaf,root,buttons,refs,react,release};return owner;
+      };
+      const one=mount('one',document,40,50);await tick();
+      one.buttons[0].click();await tick();
+      const atButton=(owner,index)=>{const call=calls.at(-1),r=owner.buttons[index].getBoundingClientRect();check(call.doc===owner.doc&&call.leaf===owner.leaf,'Menu borrowed another owning surface');check(Math.abs(call.position.x-r.left)<=1&&call.position.y>=r.bottom&&call.position.y<=r.bottom+8,'Menu used pane corner instead of invoking control')};
+      atButton(one,0);
+      one.root.style.left='120px';one.root.style.top='85px';one.buttons[0].style.left='270px';
+      await manager.dispatch({id:'view.sync.choose',source:'obsidian-command'});atButton(one,0);
+      await manager.dispatch({id:'view.sync.choose',source:'local-hotkey',surfaceId:'one'});atButton(one,0);
+      one.buttons[1].click();await tick();atButton(one,1);
+      const frame=document.createElement('iframe');frame.style.cssText='position:fixed;left:0;top:0;width:700px;height:400px';const loaded=new Promise(done=>frame.onload=done);document.body.append(frame);await loaded;
+      const two=mount('two',frame.contentDocument,20,35);await tick();two.buttons[0].click();await tick();atButton(two,0);
+      one.buttons[0].style.display='none';await manager.dispatch({id:'view.sync.choose',source:'obsidian-command'});
+      const fallback=calls.at(-1),r=one.root.getBoundingClientRect();check(fallback.doc===document&&fallback.position.x>=r.left&&fallback.position.x<r.right&&fallback.position.y>=r.top&&fallback.position.y<r.bottom,'Hidden toolbar fallback leaves its own surface');
+      one.buttons[0].style.display='';one.refs.syncMenuButtonRef.current=two.buttons[0];await manager.dispatch({id:'view.sync.choose',source:'obsidian-command'});check(calls.at(-1).doc===document,'Foreign control document borrowed');
+      one.root.style.width='18px';one.root.style.height='16px';await manager.dispatch({id:'view.sync.choose',source:'obsidian-command'});const narrow=calls.at(-1);check(narrow.position.x<r.left+18&&narrow.position.y<r.top+16,'Tiny-pane fallback outside visible root');
+      const before=calls.length,prepared=manager.prepare({id:'view.sync.choose',source:'obsidian-command',surfaceId:'one'});check(prepared.state==='accepted','Live menu preparation rejected');one.react.unmount();one.root.remove();await prepared.run();await manager.dispatch({id:'view.sync.choose',source:'obsidian-command',surfaceId:'one'});check(calls.length===before,'Disposed surface opened a menu');one.release();two.release();two.react.unmount();frame.remove();manager.dispose();check(plugin.effects.length===0,'Opening menus changed sync mode or graph state');return true;
+    })()`), true);
+  } finally { await browser.cleanup(); }
+});
+
+/** Deliver trusted browser pointer/Enter/Space input to the actual toolbar button JSX and shared manager. */
+test("sync toolbar pointer and focused-button keyboard activation use the control anchor", async () => {
+  const browser = await chromiumHarness(await bundle());
+  try {
+    const point = await browser.evaluate(`(()=>{
+      const M=sourceModules,h=M.createElement,root=document.createElement('div');root.style.cssText='position:fixed;left:70px;top:90px;width:500px;height:200px';document.body.append(root);
+      const calls=[],manager=new M.ActionManager({readCommandContext:()=>({windowId:'main',preferredSurfaceId:'owned'})});
+      const refs={rootRef:{current:root},syncMenuButtonRef:{current:null},sidecarMoveButtonRef:{current:null}};
+      const plugin={effects:[],settings:{sidecarPosition:'right'},getDocumentSyncMode:()=> 'off',hasDocumentSyncTarget:()=>false,showKplexMenuAtPosition:(menu,position,doc)=>calls.push({position,own:doc===document})};
+      const actions={surfaceId:'owned',dispatch:request=>manager.dispatch(request)};
+      const fixture=M.createToolbarMenuFixture({plugin,...refs,hostLeaf:{id:'owned'},actions,page:{file:{path:'Center.md'}}});
+      const react=M.createRoot(root);M.flushSync(()=>react.render(h(fixture.SyncControl)));
+      const button=root.querySelector('button');button.style.cssText='position:absolute;left:340px;top:20px;width:32px;height:28px';
+      const release=manager.registerSurface({id:'owned',generation:1,implementations:fixture.implementations,readSnapshot:()=>({mounted:true,visible:true,windowId:'main',center:null,selected:null,focusRegion:'toolbar',interactionRevision:0})});
+      window.toolbarKeyboardTest={calls,button,cleanup:()=>{release();react.unmount();root.remove();manager.dispose()}};
+      const r=button.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2};
+    })()`);
+    await browser.command("Input.dispatchMouseEvent", { type: "mousePressed", button: "left", clickCount: 1, ...point });
+    await browser.command("Input.dispatchMouseEvent", { type: "mouseReleased", button: "left", clickCount: 1, ...point });
+    assert.equal(await browser.evaluate("(async()=>{await new Promise(done=>setTimeout(done,0));return toolbarKeyboardTest.calls.length})()"), 1, "Trusted pointer must activate exactly once");
+    let expected = 1;
+    /** Native button defaults, not a synthetic click callback, own keyboard activation. */
+    for (const [key, code, windowsVirtualKeyCode] of [["Enter", "Enter", 13], [" ", "Space", 32]]) {
+      await browser.evaluate("toolbarKeyboardTest.button.focus()");
+      await browser.command("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode, text: key === "Enter" ? "\r" : " " });
+      await browser.command("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode });
+      assert.equal(await browser.evaluate("(async()=>{await new Promise(done=>setTimeout(done,0));return toolbarKeyboardTest.calls.length})()"), ++expected, `Trusted ${code} must activate exactly once`);
+    }
+    assert.equal(await browser.evaluate(`(async()=>{await new Promise(done=>setTimeout(done,0));const f=toolbarKeyboardTest,r=f.button.getBoundingClientRect();if(f.calls.length!==3)throw Error('Pointer/Enter/Space activation count '+f.calls.length);for(const call of f.calls)if(!call.own||call.position.x!==r.left||call.position.y<r.bottom||call.position.y>r.bottom+8)throw Error('Button activation lost anchor');f.cleanup();delete window.toolbarKeyboardTest;return true})()`), true);
+  } finally { await browser.cleanup(); }
+});
 
 /** Exercise the actual graph session/typing priority callback without loading the large scene renderer. */
 function productionGraphSession() {

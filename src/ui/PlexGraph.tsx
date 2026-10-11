@@ -1,5 +1,7 @@
 /**
  * Host-bound Plex scene composition, shared captured center-arrival motion and finite Wander navigation ports, layout and relationship interactions. Semantic resolution stays index/core-owned; UI labels and on-demand evidence hints use the injected translator. Navigation fits keep the central node centered and follow late geometry until manual camera input; publication and ordinary pane resizing preserve manual intent. View-owned display transitions retain camera coordinates and scene settings. Device typography stages scalar live preferences and persists after input settles; unmount flushes storage without replaying stale overrides. Area-height gestures own viewport pointer capture and persist existing presentation settings on completion or interruption. History and pinned drag targets share composer eligibility; external file drops follow the rendered area's semantic role. Theme-native area previews follow the existing drop action without intercepting capture or moving the dragged thought. Visible rows retain finite cache-only presentation demand; hidden surfaces and effect teardown release it. Geometry defers gate/count queries until a row intersects the displayed viewport, including partially clipped rows. Ordinary unfiltered scenes project cross-links for clipped visible rows; filtered and section scenes retain their established edge/count policy. Scene-local React keys capture paths before canonical pages can mutate during rename; semantic pages and actions retain their live identity. Normal-mode keyboard and exact-phrase typing selection are view-local; the displayed occurrence projection supplies all candidates and the shared selection owner reveals them without changing the center, filters or native search. Host methods own activation/rename/creation. Filtered badge numerators use revision-scoped semantic endpoint membership independently of connector routing and viewport clipping. Pane-fit native layout controls own local touch containment and bounded scrolling without changing preferences or browser range behavior. Accessible layout-wrapper hints use the shell's shared tooltip owner; inputs retain concise accessible names.
+ * Visual resolution and metadata refreshes retain the index consent epoch; teardown and revocation
+ * reject late publication. Hover enlargement uses the same already-guarded image element.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent, type MouseEvent, type PointerEvent, type RefObject } from "react";
 import { createPlexContextMenu } from "./plexContextMenu";
@@ -892,20 +894,31 @@ export function PlexGraph({ plugin, index, settings: viewSettings, surface, host
     scene.nodes.filter((node) => !node.page.transient).map((node) => [node.page.path, node.page]),
   ).values()], [scene.nodes]);
   const visualPageByPath = useMemo(() => new Map(visualPages.map((page) => [page.path, page])), [visualPages]);
-  useEffect(() => {
+  useEffect(/** Resolve visible imagery under one consent epoch and retire publication on teardown. */ () => {
     let cancelled = false;
+    const revision = index.getNodeVisualRevision();
     if (!visualPages.length) {
       setNodeVisuals(new Map());
       return () => { cancelled = true; };
     }
-    void index.resolveNodeVisuals(visualPages).then((resolved) => { if (!cancelled) setNodeVisuals(resolved); });
+    void index.resolveNodeVisuals(visualPages).then(/** Reject results resolved before a permission change. */ (resolved) => {
+      if (!cancelled && revision === index.getNodeVisualRevision()) {
+        setNodeVisuals(/** Recheck the epoch if React defers this update past a later consent save. */ (current) =>
+          !cancelled && revision === index.getNodeVisualRevision() ? resolved : current);
+      }
+    });
     return () => { cancelled = true; };
-  }, [index, visualPages, settings.thumbnailProperty, settings.nodeImageProperty, settings.attachmentImageDisplay, renderRevision]);
-  useEffect(() => {
+  }, [index, visualPages, settings.thumbnailProperty, settings.nodeImageProperty, settings.attachmentImageDisplay, settings.allowRemoteNodeImages, renderRevision]);
+  useEffect(/** Subscribe only this surface's visible metadata; pending work retires with its consent policy. */ () => {
+    let cancelled = false;
+    /** Refresh a visible node without acquisition; epoch checks also protect deferred React updaters. */
     const refreshVisibleVisual = (page: GraphPage) => {
       index.invalidateNodeVisual(page.path);
-      void index.resolveNodeVisuals([page]).then((resolved) => {
-        setNodeVisuals((current) => {
+      const revision = index.getNodeVisualRevision();
+      void index.resolveNodeVisuals([page]).then(/** Fence the promise before scheduling any state update. */ (resolved) => {
+        if (cancelled || revision !== index.getNodeVisualRevision()) return;
+        setNodeVisuals(/** A queued updater must still belong to this effect and consent epoch. */ (current) => {
+          if (cancelled || revision !== index.getNodeVisualRevision()) return current;
           const next = new Map(current);
           const visual = resolved.get(page.path);
           if (visual) next.set(page.path, visual); else next.delete(page.path);
@@ -929,11 +942,12 @@ export function PlexGraph({ plugin, index, settings: viewSettings, surface, host
       }, 3500));
     });
     return () => {
+      cancelled = true;
       plugin.app.metadataCache.offref(ref);
       for (const timer of visualRefreshTimers.current.values()) window.clearTimeout(timer);
       visualRefreshTimers.current.clear();
     };
-  }, [plugin, index, visualPageByPath, settings.thumbnailProperty, settings.nodeImageProperty, settings.attachmentImageDisplay]);
+  }, [plugin, index, visualPageByPath, settings.thumbnailProperty, settings.nodeImageProperty, settings.attachmentImageDisplay, settings.allowRemoteNodeImages]);
   const viewport = useRef<HTMLDivElement | null>(null);
   const cameraElement = useRef<HTMLDivElement | null>(null);
   const centralEditorOverlayElement = useRef<HTMLDivElement | null>(null);

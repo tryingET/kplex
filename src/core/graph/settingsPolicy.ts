@@ -10,7 +10,7 @@ export const PRESENTATION_KEYS = [
   "showFullTagName", "noteTypeField", "primaryTagField", "tagStyleList", "renderAlias", "nameFields", "nodeTitleScript",
   "baseNodeStyle", "centralNodeStyle", "inferredNodeStyle", "virtualNodeStyle", "siblingNodeStyle", "urlNodeStyle",
   "attachmentNodeStyle", "folderNodeStyle", "tagNodeStyle", "tagNodeStyles", "noteTypeStyles", "displayAllStylePrefixes",
-  "baseLinkStyle", "inferredLinkStyle", "folderLinkStyle", "tagLinkStyle", "hierarchyLinkStyles", "attachmentImageDisplay",
+  "baseLinkStyle", "inferredLinkStyle", "folderLinkStyle", "tagLinkStyle", "hierarchyLinkStyles", "attachmentImageDisplay", "allowRemoteNodeImages",
 ] as const;
 const SEMANTIC_KEYS = ["inferAllLinksAsFriends", "inverseInfer", "thumbnailProperty", "nodeImageProperty", "datePropertyRelations"] as const;
 const VIEW_KEYS = [
@@ -109,7 +109,7 @@ function effectsForKeys(changedKeys: readonly SettingDiagnosticKey[]): SettingsE
     semanticInvalidation: changedKeys.some((key) => HIERARCHY_ROLES.some((role) => key === `hierarchy.${role}`)) || has(...SEMANTIC_KEYS),
     presentationFacets: has("showFullTagName", "noteTypeField", "primaryTagField", "tagStyleList", "baseNodeStyle.maxLabelLength"),
     searchTerms: has("showFullTagName", "renderAlias", "nameFields", "nodeTitleScript"),
-    nodeVisuals: has("thumbnailProperty", "nodeImageProperty", "attachmentImageDisplay"),
+    nodeVisuals: has("thumbnailProperty", "nodeImageProperty", "attachmentImageDisplay", "allowRemoteNodeImages"),
     render: changedKeys.length > 0,
     typographyOnly: changedKeys.length === 1 && changedKeys[0] === "typographyProfiles",
     changedKeys,

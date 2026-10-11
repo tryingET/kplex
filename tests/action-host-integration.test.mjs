@@ -1,4 +1,4 @@
-/** Host workflow persistence and delayed physical identity use actual production callbacks. */
+/** Host workflow persistence, menu/surface lifetimes and delayed physical identity use actual production callbacks. */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import ts from 'typescript';
@@ -31,6 +31,35 @@ function method(name, dependencies = {}) {
 const update = method('updateActionPreferences', { ...contracts, readObsidianPresentationEnvironment: () => ({ keyConvention: 'windows' }), window: {} });
 const enqueue = method('enqueueSettingsWrite');
 const persist = method('persistSettingsSnapshot');
+
+/** A surface release owns only its current leaf/document menu, including a native-hide timer. */
+test('surface disposal retires its menu and listeners without closing another owner or successor', () => {
+  const document = () => {
+    const listeners = new Set(), timers = new Map(); let sequence = 0;
+    const doc = { listeners, timers, addEventListener: (_kind, fn) => listeners.add(fn), removeEventListener: (_kind, fn) => listeners.delete(fn) };
+    doc.defaultView = { ...doc, setTimeout: callback => { timers.set(++sequence, callback); return sequence; }, clearTimeout: id => timers.delete(id) };
+    return doc;
+  };
+  const main = document(), popout = document(), leaf = { view: { containerEl: { ownerDocument: main } } }, other = { view: { containerEl: { ownerDocument: main } } };
+  const host = { actionSurfaceHosts: new Map(), actionDialogs: new Map(), supportEvents: { record() {} }, kplexMenuOutsidePointerDown() {}, kplexMenuEscapeKeyDown() {},
+    activeKplexMenu: null, activeKplexMenuDocument: null, activeKplexMenuLeaf: null, justClosedKplexMenu: null, kplexMenuReleaseTimer: null,
+    dismissKplexMenu: method('dismissKplexMenu'), trackKplexMenu: method('trackKplexMenu'), registerActionSurfaceHost: method('registerActionSurfaceHost') };
+  const menu = () => ({ hidden: 0, onHide(callback) { this.callback = callback; }, hide() { this.hidden++; this.callback?.(); } });
+  let release = host.registerActionSurfaceHost('one', 1, leaf), current = menu(); host.trackKplexMenu(current, main, leaf);
+  // Obsidian adopts the container before the source React generation is disposed.
+  leaf.view.containerEl.ownerDocument = popout; release();
+  assert.equal(current.hidden, 1, 'Migrating source menu must close'); assert.equal(main.listeners.size, 0); assert.equal(main.timers.size, 0);
+  const stale = host.registerActionSurfaceHost('one', 2, leaf); release = host.registerActionSurfaceHost('one', 3, leaf);
+  current = menu(); host.trackKplexMenu(current, popout, leaf); stale();
+  assert.equal(current.hidden, 0, 'Stale registration must preserve its successor');
+  const releaseOther = host.registerActionSurfaceHost('other', 1, other); releaseOther(); assert.equal(current.hidden, 0, 'Another leaf must preserve the menu');
+  release(); assert.equal(current.hidden, 1); assert.equal(popout.listeners.size, 0);
+  leaf.view.containerEl.ownerDocument = main; release = host.registerActionSurfaceHost('one', 4, leaf);
+  current = menu(); host.trackKplexMenu(current, popout, leaf); release(); assert.equal(current.hidden, 0, 'Same leaf in another document must preserve its menu'); host.dismissKplexMenu();
+  release = host.registerActionSurfaceHost('one', 5, leaf); current = menu(); host.trackKplexMenu(current, main, leaf); current.hide();
+  assert.equal(main.timers.size, 1, 'Native hide retains cancellation until the next task'); release();
+  assert.equal(main.listeners.size, 0); assert.equal(main.timers.size, 0); assert.equal(host.justClosedKplexMenu, null);
+});
 
 /** Exercise the actual main command-association callback independently of native plugin initialization. */
 function commandContext(dependencies) {

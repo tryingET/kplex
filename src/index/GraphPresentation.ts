@@ -6,6 +6,7 @@
  * Missing inputs remain explicitly pending and never cause Markdown acquisition or graph work.
  * Facet batches release CPU slices through host event tasks while keeping captured metadata,
  * settings and cancellation fences independent of dispatch.
+ * Revocable image permission remains live at rendering boundaries even while a policy save is pending.
  */
 import { yieldToHostTask } from "../adapters/obsidian/yieldToHostTask";
 import { getAllTags, type App, type CachedMetadata, type TFile } from "obsidian";
@@ -36,9 +37,10 @@ export function capturePresentationSettings(settings: KplexSettings): KplexSetti
   return Object.assign({}, settings, Object.fromEntries(PRESENTATION_KEYS.map((key) => [key, structuredClone(settings[key])])));
 }
 
-/** Render with one prepared presentation policy, while preserving live view/workflow settings. */
+/** Render prepared presentation with live consent, so revocation never waits for asynchronous saves. */
 export function withPreparedPresentation(settings: KplexSettings, prepared: KplexSettings): KplexSettings {
-  return Object.assign({}, settings, Object.fromEntries(PRESENTATION_KEYS.map((key) => [key, prepared[key]])));
+  return Object.assign({}, settings, Object.fromEntries(PRESENTATION_KEYS.map((key) => [key, prepared[key]])),
+    { allowRemoteNodeImages: settings.allowRemoteNodeImages === true });
 }
 
 /** Read only the requested field, preserving the collector's first-match note-type precedence. */

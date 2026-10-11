@@ -1,5 +1,7 @@
 /**
  * Obsidian plugin lifecycle and host orchestration for indexing, navigation and vault mutations. Portable owners determine semantics; this host boundary supplies effects, cleanup and localized product feedback. Native metadata events request finite visible presentation repair independently of semantic readiness. Passive document synchronization preserves the current representation of exact matching native destinations; explicit opening and source inspection retain their separate navigation contracts. Support reporting projects retained facts without starting index work; this lifetime owns its bounded recorder and native report dialogs. Per-note Markdown zoom preferences follow Vault rename/delete events independently of index readiness.
+ * Remote node image consent publishes synchronously before persistence and never requests semantics.
+ * Surface registration releases menus in its captured rendering document before migration/close retires that realm.
  */
 import { FileView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, TFolder, apiVersion, getLanguage, getAllTags, normalizePath, setIcon, type Editor, type EventRef, type HoverParent, type WorkspaceLeaf } from "obsidian";
 import { captureSettingsPolicy, classifySettingsChange, type SettingsPolicy } from "./core/graph/settingsPolicy";
@@ -1401,13 +1403,18 @@ export default class KplexPlugin extends Plugin {
     return id;
   }
 
-  /** Associate one React generation with its native leaf; stale cleanup cannot erase a successor. */
+  /** Associate a React generation with its leaf/document; release its menu without retiring another owner or successor. */
   registerActionSurfaceHost(id: string, generation: number, leaf: WorkspaceLeaf): () => void {
     const registration = { generation, leaf };
+    const ownerDocument = leaf.view.containerEl.ownerDocument;
     this.actionSurfaceHosts.set(id, registration);
     this.supportEvents.record("view-created", { category: "view" });
     return /** Release only this owning React generation's native association. */ () => {
       if (this.actionSurfaceHosts.get(id) === registration) {
+        if ((this.activeKplexMenuLeaf === leaf && this.activeKplexMenuDocument === ownerDocument)
+          || (this.justClosedKplexMenu?.leaf === leaf && this.justClosedKplexMenu.document === ownerDocument)) {
+          this.dismissKplexMenu();
+        }
         this.actionSurfaceHosts.delete(id);
         this.supportEvents.record("view-closed", { category: "view" });
       }
@@ -1676,12 +1683,19 @@ export default class KplexPlugin extends Plugin {
    * Persist all caller mutations through the canonical immutable settings projection. The legacy
    * boolean is a call-site compatibility facade only: managers/imports cannot bypass classification.
    * Capture before awaiting storage so overlapping saves cannot lose a semantic invalidation.
+   * Image consent retires pending visuals and notifies every surface before storage; a consent-only
+   * change never acquires or recompiles semantic scopes.
    */
   async saveSettings(_reindex = false, notifyIndex = true): Promise<void> {
     this.settings.primaryTagFieldLowerCase = this.settings.primaryTagField.toLowerCase().replaceAll(" ", "-");
     const next = captureSettingsPolicy(this.settings);
     const effects = classifySettingsChange(this.savedSettingsPolicy ?? next, next);
+    const consentOnly = effects.changedKeys.length === 1 && effects.changedKeys[0] === "allowRemoteNodeImages";
     this.savedSettingsPolicy = next;
+    if (effects.changedKeys.includes("allowRemoteNodeImages")) {
+      this.index.invalidateNodeVisuals();
+      this.index.notifyPresentation();
+    }
     if (effects.semanticInvalidation) this.index.invalidateSemanticPolicy();
     await this.persistSettingsSnapshot();
     if (this.unloading) return;
@@ -1689,7 +1703,7 @@ export default class KplexPlugin extends Plugin {
     if (effects.semanticInvalidation) await this.index.refreshSemanticSettings();
     // Device typography changes reuse the existing graph and cannot expand a requested scope.
     // Preserve the legacy refresh for all other render changes, including mixed writes.
-    else if (effects.render && !effects.typographyOnly) await this.index.refreshSemanticSettings();
+    else if (effects.render && !effects.typographyOnly && !consentOnly) await this.index.refreshSemanticSettings();
     // Workflow-only callers can still request their historical view notification. Changed settings
     // use the separate presentation channel and never pretend relationship evidence changed.
     if ((!effects.render || effects.typographyOnly) && notifyIndex) this.index.notifyPresentation();

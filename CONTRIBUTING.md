@@ -79,6 +79,8 @@ The strict host lane checks the CLI-reported vault path before changing anything
 
 For live plugin/index diagnostics, CLI fault injection, reload-safe references and evidence capture, see [Obsidian runtime testing](docs/OBSIDIAN_RUNTIME_TESTING.md).
 
+After exact-build staging, `npm run verify:obsidian:menu-anchor` checks sync and Sidecar menu anchors in `kplex-test-small`, using the same three explicit vault variables and a fresh `KPLEX_HOST_REPORT_DIR`. It delivers trusted pointer and focused-button keyboard input, invokes the published sync command, and checks hidden-toolbar fallback, rapid reopening, Escape/outside dismissal, narrow popout clamping and two-way window migration. A forwarding observer selects Obsidian's inspectable DOM Menu backend without changing coordinates or action choices. The driver restores workspace, settings, display modes, follow owners and configuration bytes. OS-native menu rendering on Windows/macOS and physical touch require separate acceptance.
+
 Run native drivers serially and keep the selected Obsidian window foreground. Native focus helpers call the [macOS-only Electron `app.show()`](https://www.electronjs.org/docs/latest/api/app#appshow-macos) only when available, while still showing/focusing the selected window on Windows. After strict staging passes, use a fresh report directory and the same vault variables for the applicable focused lane. To switch vaults, update **all three** identity/path/config variables. A sandboxed agent may need permission to connect to Obsidian's local IPC and write the selected vault outside its source checkout; an IPC failure inside a sandbox does not establish that Obsidian is closed. A CLI-disabled message requires enabling the host setting, not reinstalling K-Plex. Never resolve a failed preflight by targeting the default/personal vault. Windows PowerShell 5.1 can strip embedded double quotes from direct native `eval` arguments; run complex probes through a Node script with `spawnSync(executable, args)` as the drivers do.
 
 After staging the verified build, `npm run verify:obsidian:si4` uses the same three disposable-vault variables to run native settings acceptance. It checks installed artifact hashes, waits for actual startup/source readiness, then tests saved ontology/inference/image policies, rendered gates/labels, siblings, search/provenance and stale writes with zero body reads/parses/acquisitions or full builds. The default requires at least 20,015 Markdown files; `KPLEX_SI4_REQUIRED_FILES=0` selects a small-vault harness check. It restores settings, owned fixtures, wrappers, demand and renderer throttling; `si4-native.json` records actual results in `KPLEX_HOST_REPORT_DIR`. This functional diagnostic does not replace SI5 foreground, restart, popout or physical-device acceptance.
@@ -390,6 +392,22 @@ lookup wrapper independently of assertions. Run native drivers serially. DOM
 pointer events and desktop emulation do not prove physical Android/iOS touch,
 mobile lifecycle or actual paint latency; check sidebar reveal, central double
 taps versus pan/long-press, and the compact rails on a physical phone separately.
+
+## Arrow direction acceptance
+
+After exact-build staging with `npm run verify:obsidian`, run
+`npm run verify:obsidian:arrow-direction` with the three explicit disposable
+`kplex-test-small` vault variables and a fresh `KPLEX_HOST_REPORT_DIR`. The driver
+uses the issue 114 two-note fixture, preserves active inferred explanation
+evidence, and checks the defined direction and actual SVG marker from both
+centers with inversion and inferred visibility on/off. It repeats policy refresh,
+reloads the plugin against warm source data and checks a second native view.
+It restores settings bytes, workspace, native ownership and its fixture notes
+independently of assertions. Run native drivers serially.
+
+`KPLEX_ARROW_EXPECT_BASELINE=true` characterizes the unfixed `BOTH` direction and
+is explicitly reported as baseline reproduction, never candidate acceptance.
+Neither mode establishes physical-device interaction or paint latency.
 
 ## Search interaction checklist
 
@@ -745,6 +763,39 @@ drivers serially. Physical touch and subjective paint remain separate from nativ
 `tests/canvas-menu.test.mjs` checks callback/draft/lifetime contracts with finite native-component
 doubles. Both are in `npm test`; the installed Obsidian typings and native lane remain authoritative
 for real host component behavior.
+
+## Remote node image consent acceptance
+
+After exact-build staging with `npm run verify:obsidian`, run
+`npm run verify:obsidian:remote-images` with the three explicit disposable
+`kplex-test-small` vault variables and a fresh `KPLEX_HOST_REPORT_DIR`.
+The driver serves tiny images from an owned loopback origin and counts actual image requests.
+It checks denied initial/navigation/expanded/hover rendering, local vault images, a fresh
+no-consent popout, opt-in in both documents, opt-out plus native metadata refresh, and saved
+opt-in after plugin reload. It restores preferences, native follow ownership, workspace and
+configuration bytes and removes only its own fixtures, probe and server, even on failure.
+Installed/build hash mismatch or failed cleanup fails the lane. Run native drivers serially.
+Physical-device networking remains separate; opt-out cannot undo requests already sent.
+
+`tests/remote-node-images.test.mjs` uses real Chromium, React and IndexedDB with finite
+Obsidian input doubles and a controlled loopback image server. It checks supported resolver
+forms, local fallback, both inline cache paths, held reads across revocation/off-on/unload,
+the actual settings save method's zero-semantic-work boundary, and actual DOM/network output
+in two documents. New permission copy uses the existing English fallback until translations
+are reviewed. No third-party image source is contacted by either lane.
+
+## Native rename identity acceptance
+
+After exact-build staging, run `npm run verify:obsidian:rename` with the three explicit
+disposable `kplex-test-small` vault variables and a fresh `KPLEX_HOST_REPORT_DIR`.
+Run browser/native lanes serially. The driver checks synchronous retained incidence and
+settled visible labels through FileManager and K-Plex's actual rename action/modal, with
+automatic link updates on/off, filename/alias labels, moves, case-only spelling, duplicate
+basenames, pins/history and warm plugin reload in eager and on-demand modes. It restores
+its fixture subtree, wrappers, workspace, follow ownership and original configuration bytes.
+DOM modal activation is programmatic; Linux, OS rename UI, popout migration, full application
+restart and physical mobile touch remain separate acceptance. See the
+[rename validation record](docs/validation/rename-identity-2026-10-11.md).
 
 ## Navigation and embedded drawing fit acceptance
 

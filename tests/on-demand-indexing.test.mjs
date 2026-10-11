@@ -48,6 +48,165 @@ const initialize = `(() => {
   return true;
 })()`;
 
+for (const mode of ['on-demand','eager']) test('native rename synchronously remaps separately published center incidence before source repair ('+mode+')', async()=>scenario(`(async()=>{
+  const mode=${JSON.stringify(mode)};const o=await onDemandFixture('v2-rename-read-scope-'+mode,{renderAlias:false,indexingMode:mode});const {f,index}=o;let release;
+  try{
+    f.add('A.md','[[B]]',{Child:'[[B]]'});const file=f.add('B.md','');f.app.metadataCache.resolvedLinks={'A.md':{'B.md':2}};
+    ok(await index.initializeOnDemandBaseline(),'Baseline');
+    if(mode==='eager'){delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};index.sourceAcquisition.enableInventory();await index.sourceAcquisition.reconcile();await index.sourceAcquisition.flush();ok(index.sourceAcquisition.hasSemanticDependencies(),'Actual source authority');}
+    release=index.acquireSemanticDemand('A.md');await settleDemand(index);if(mode==='eager')await index.ensureSemanticScope('A.md');
+    const before=index.getNeighborhood('A.md').children.find(n=>n.page.file===file)?.page;ok(before,'Native source has a separately published materialized neighbor');
+    const retainedBefore=[...index.semanticScopes.values()].map(scope=>scope.pagesByPath.get('B.md')).find(Boolean);
+    const observations=[];const unsubscribe=index.subscribePresentation(()=>observations.push(index.getNeighborhood('A.md').children.filter(n=>n.page.file===file).map(n=>n.page.path)));
+    f.files.delete('B.md');file.path='Renamed.md';file.name='Renamed.md';file.basename='Renamed';f.files.set(file.path,file);
+    index.invalidateHostStructure();f.app.vault.trigger('rename',file,'B.md');
+    ok(index.renameFile('B.md',file),'Known rename handled');
+    unsubscribe();ok(observations.every(paths=>paths.every(path=>path===file.path)),'No presentation subscriber observes a partially remapped native identity');
+    const after=index.getNeighborhood('A.md').children.filter(n=>n.page.file===file);
+    equal(after.length,1,'Exactly one materialized occurrence survives at the rename boundary');
+    equal(after[0].page.path,file.path,'Published neighbor coordinates follow the same native file immediately');
+    equal(index.titleFor(after[0].page),'Renamed','Filename title changes before metadata/acquisition repair');
+    ok(!index.get('B.md')?.file,'Old path cannot still materialize the renamed native file');
+    ok(index.get(file.path)?.file===file,'New lookup owns the canonical file');
+    ok(!index.isSemanticWriteReady('A.md',file.path),'Remapping a retained view cannot certify fresh source authority');
+    if(mode==='on-demand')ok(after[0].page===before,'Retained page identity survives the synchronous move');
+    else ok([...index.semanticScopes.values()].some(scope=>scope.pagesByPath.get(file.path)===retainedBefore),'Canonical retained semantic page identity survives presentation composition');
+    const movedText=f.texts.get('B.md'),movedMetadata=f.metadata.get('B.md');f.texts.delete('B.md');f.metadata.delete('B.md');f.texts.set(file.path,movedText);f.metadata.set(file.path,movedMetadata);
+    f.app.metadataCache.resolvedLinks={'A.md':{},[file.path]:{}};f.app.metadataCache.unresolvedLinks={'A.md':{'B':2}};
+    f.app.metadataCache.trigger('changed',f.files.get('A.md'));f.app.metadataCache.trigger('changed',file);
+    if(mode==='eager'){await index.sourceAcquisition.flush();await index.ensureSemanticScope('A.md');}else{await index.refreshVisibleMarkdownPath('A.md');await settleDemand(index);}
+    const ghost=index.getNeighborhood('A.md').children.find(n=>n.page.path==='B');ok(ghost&&!ghost.page.file,'Unupdated raw links retain an actual old-name ghost');
+    ok(index.get(file.path)?.file===file,'Renamed physical file remains distinct from supported ghost');
+    return true;
+  }finally{release?.();o.close();}
+})()`));
+
+test('retained native rename preserves aliases, merges a destination ghost and follows repeated moves without stealing duplicate basenames', async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('v2-rename-alias-collision',{renderAlias:true,nameFields:'aliases,title'});const {f,index}=o;let release;
+  try{
+    f.add('A.md','[[B]] [[Renamed]]',{Child:['[[B]]','[[Renamed]]']});const file=f.add('B.md','',{aliases:['Stable alias'],title:'Stable title'});const other=f.add('Other/B.md','');
+    f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1}};f.app.metadataCache.unresolvedLinks={'A.md':{Renamed:1}};
+    ok(await index.initializeOnDemandBaseline(),'Baseline');release=index.acquireSemanticDemand('A.md');await settleDemand(index);
+    ok(index.getNeighborhood('A.md').children.some(n=>!n.page.file),'Destination starts as a supported ghost');
+    for(const path of ['Renamed.md','Moved/Renamed.md','Moved/renamed.md','Final.md']){
+      const old=file.path;f.files.delete(old);file.path=path;file.name=path.split('/').pop();file.basename=file.name.slice(0,-3);f.files.set(path,file);
+      index.invalidateHostStructure();index.renameFile(old,file);
+      const actual=index.getNeighborhood('A.md').children.filter(n=>n.page.file===file);
+      equal(actual.length,1,'One retained materialized endpoint after '+path);equal(actual[0].page.path,path,'Native coordinates after '+path);
+      equal(index.titleFor(actual[0].page),'Stable alias','Configured alias survives physical rename');
+      if(old.toLowerCase()!==path.toLowerCase())ok(!index.get(old)?.file,'Retired path has no moved native identity: '+old+' -> '+path);
+      else equal(index.get(old)?.path,path,'Case-insensitive lookup returns the current physical spelling');
+      ok(index.get(other.path)?.file===other,'Same basename in another folder keeps its independent native identity');
+      ok(!index.isSemanticWriteReady('A.md',path),'Read-only rename cannot grant selected-pair write authority');
+    }
+    const replacement=f.add('B.md','');index.insertCreatedFile(replacement);
+    index.renameFile('B.md',file);
+    ok(index.get('B.md')?.file===replacement,'A late duplicate rename cannot steal a replacement at the original path');
+    ok(index.get(file.path)?.file===file,'Late work keeps the renamed native identity separate');
+    return true;
+  }finally{release?.();o.close();}
+})()`));
+
+test('parent-only rename remaps requested file incidence absent from the main graph before yielding', async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('v2-rename-requested-folder',{renderAlias:false});const {f,index}=o;let release;
+  try{
+    const root=f.app.vault.getRoot(),folder=new ContributorFolder();folder.path='Old';folder.name='Old';folder.parent=root;
+    const file=f.add('Old/B.md','');file.parent=folder;folder.children=[file];root.children=[folder];f.add('A.md','[[Old/B]]',{Child:'[[Old/B]]'});
+    const folders=new Map([['Old',folder]]);f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:folders.get(path)??null;
+    f.app.metadataCache.resolvedLinks={'A.md':{'Old/B.md':2}};ok(await index.initializeOnDemandBaseline(),'Baseline');release=index.acquireSemanticDemand('A.md');await settleDemand(index);
+    ok(index.getNeighborhood('A.md').children.some(n=>n.page.file===file),'Requested file visible');
+    f.files.delete(file.path);folders.delete('Old');folder.path='New';folder.name='New';folders.set('New',folder);file.path='New/B.md';f.files.set(file.path,file);
+    index.invalidateHostStructure();const task=index.renameFolder('Old',folder);
+    equal(index.getNeighborhood('A.md').children.filter(n=>n.page.file===file).map(n=>n.page.path),['New/B.md'],'Requested incidence follows parent-only event synchronously');
+    await task;ok(!index.get('Old/B.md')?.file,'No retired physical occurrence survives');return true;
+  }finally{release?.();o.close();}
+})()`));
+
+test('a retained moved-file scope follows current native folder membership synchronously', async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('v2-rename-retained-ancestry',{renderAlias:false,showFolderNodes:true});const {f,index}=o;let release;
+  try{
+    const root=f.app.vault.getRoot(),old=new ContributorFolder(),next=new ContributorFolder();
+    old.path='Old';old.name='Old';old.parent=root;next.path='Next';next.name='Next';next.parent=root;root.children=[old,next];
+    const folders=new Map([['Old',old],['Next',next]]);f.app.vault.getFolderByPath=path=>path==='/'||path===''?root:folders.get(path)??null;
+    const file=f.add('Old/B.md','');file.parent=old;old.children=[file];
+    ok(await index.initializeOnDemandBaseline(),'Baseline');release=index.acquireSemanticDemand(file.path);await settleDemand(index);
+    ok(index.getNeighborhood(file.path).parents.some(n=>n.page.path==='folder:Old'),'Actual native old ancestry published');
+    f.files.delete(file.path);file.path='Next/B.md';file.parent=next;old.children=[];next.children=[file];f.files.set(file.path,file);index.invalidateHostStructure();index.renameFile('Old/B.md',file);
+    const parents=index.getNeighborhood(file.path).parents.map(n=>n.page.path);
+    ok(parents.includes('folder:Next')&&!parents.includes('folder:Old'),'Read-only retained scope follows actual moved-file ancestry before source repair');return true;
+  }finally{release?.();o.close();}
+})()`));
+
+test('rename retains an exact negative relationship cover while retiring its write certificate', async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('v2-rename-negative-pair',{renderAlias:false});const {f,index}=o;const releases=[];
+  try{
+    const a=f.add('A.md','',{Child:'[[B]]'}),b=f.add('B.md','');f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1}};
+    ok(await index.initializeOnDemandBaseline(),'Baseline');releases.push(index.acquireSemanticDemand('A.md'),index.acquireSemanticDemand('B.md'));await settleDemand(index);
+    ok(await index.prepareRelationshipPair('A.md','B.md'),'Initial exact positive pair');
+    f.metadata.set('A.md',{});f.texts.set('A.md','');a.stat.mtime++;f.app.metadataCache.resolvedLinks={'A.md':{}};
+    f.app.vault.trigger('modify',a);f.app.metadataCache.trigger('changed',a);
+    ok(await index.prepareRelationshipPair('A.md','B.md'),'Actual cleared source publishes exact negative replacement');
+    equal(index.getNeighborhood('A.md').children.filter(n=>n.page.file===b).length,0,'Negative cover hides retained old incidence');
+    f.files.delete('B.md');b.path='New.md';b.name='New.md';b.basename='New';f.files.set(b.path,b);index.invalidateHostStructure();f.app.vault.trigger('rename',b,'B.md');index.renameFile('B.md',b);
+    equal(index.getNeighborhood('A.md').children.filter(n=>n.page.file===b).length,0,'Rename cannot reveal an already removed retained edge');
+    ok(!index.isSemanticWriteReady('A.md',b.path),'Old exact negative proof cannot authorize new-coordinate writes');
+    ok(index.relationshipPairs.has(JSON.stringify(['A.md','New.md'])),'Coherent negative pair follows native coordinates');return true;
+  }finally{for(const release of releases)release();o.close();}
+})()`));
+
+test('eager rename keeps newer requested alias facets over an older complete full graph without granting authority', async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('v2-rename-eager-newer-alias',{renderAlias:true,nameFields:'aliases,title',indexingMode:'eager'});const {f,index}=o;let release;
+  try{
+    delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+    f.add('A.md','',{Child:'[[B]]'});const b=f.add('B.md','');f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1}};
+    ok(await index.rebuild(),'Actual complete canonical graph');await index.sourceAcquisition.reconcile();await index.sourceAcquisition.flush();
+    ok(index.sourceAcquisition.hasSemanticDependencies(),'Real source authority');
+    const M=sourceModules;
+    ok(await index.indexedDb.writeSnapshot({createdAt:Date.now(),urlAliasVersion:2,vaultSignature:M.computeVaultSignature(f.app),settingsSignature:M.computeIndexSettingsSignature(o.settings),discoveredFields:[]},
+      [...index.state.pages.values()].map(p=>M.persistedPageFromGraphPage(p)),[...index.state.evidence.declarations()].map(e=>M.persistedDeclarationFromEvidence(e)),()=>true),'Actual complete acceleration persisted');
+    ok((await index.restorePersistedSnapshot(['A.md'])).restored,'Real warm acceleration restored');
+    f.metadata.set('B.md',{frontmatter:{aliases:['Stable alias'],title:'Stable title'}});
+    release=index.acquireSemanticDemand('A.md');
+    while(index.semanticPreparationTasks.size)await Promise.all([...index.semanticPreparationTasks.values()].map(entry=>entry.task));
+    await index.prepareSemanticScope('A.md',index.semanticPolicyRevision,index.semanticDemandRevision.get('A.md')??0);
+    await index.sourceAcquisition.flush();
+    await index.prepareSemanticScope('A.md',index.semanticPolicyRevision,index.semanticDemandRevision.get('A.md')??0);
+    ok(index.semanticScopes.get('A.md')?.pagesByPath.get('B.md')?.aliases.includes('Stable alias'),'Actual newer scope published: '+JSON.stringify(index.getSemanticPreparationDiagnostics()));
+    const before=index.getNeighborhood('A.md').children.find(n=>n.page.file===b)?.page;
+    equal(index.titleFor(before),'Stable alias','Actual requested physical facets are newer than the full graph');
+    equal(index.state.pages.get('B.md').aliases,[],'Older full state has not acquired those optional aliases');
+    // Use the real startup retention boundary after acquisition closes its queued publications.
+    index.retainCachedStartupPresentation(index.state);
+    ok(index.cachedSnapshotPages.has(index.state.pages.get('B.md')),'Old full-page fallback remains actually cached');
+    f.files.delete('B.md');b.path='New.md';b.name='New.md';b.basename='New';f.files.set(b.path,b);index.invalidateHostStructure();index.renameFile('B.md',b);
+    const after=index.getNeighborhood('A.md').children.find(n=>n.page.file===b)?.page;
+    equal(after.path,b.path,'Retained coordinates remapped');equal(index.titleFor(after),'Stable alias','Closing source proof cannot choose older full-graph facets');
+    ok(!index.isSemanticWriteReady('A.md',b.path),'Retained presentation cannot certify renamed source identity');return true;
+  }finally{release?.();o.close();}
+})()`));
+
+test('native case rename retains an actual host preview while the older canonical graph awaits source repair', async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('v2-rename-native-preview',{indexingMode:'eager',renderAlias:true,nameFields:'aliases,title'});const {f,index}=o;
+  try{
+    delete index.sourceAcquisition.enableInventory;index.plugin.startupDiagnostics.processed=()=>{};
+    f.add('A.md','',{Child:'[[Gone]]'});const b=f.add('B.md','',{aliases:['Stable alias']});
+    f.app.metadataCache.unresolvedLinks={'A.md':{Gone:1}};ok(await index.rebuild(),'Actual older canonical graph');
+    f.metadata.set('A.md',{frontmatter:{Child:'[[B]]'},links:[]});
+    f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1}};f.app.metadataCache.unresolvedLinks={};o.bump();
+    await index.publishHostMetadataPreview('A.md');
+    ok(index.hostPreviewScopes.has('A.md'),'Actual host preview is the newer readable owner');
+    const before=index.getNeighborhood('A.md').children.find(n=>n.page.file===b)?.page;ok(before,'Current host preview exposes linked native identity');
+    equal(index.titleFor(before),'Stable alias','Known host-preview alias');
+    f.files.delete('B.md');b.path='b.md';b.name='b.md';b.basename='b';f.files.set(b.path,b);
+    index.invalidateHostStructure();f.app.vault.trigger('rename',b,'B.md');index.renameFile('B.md',b);
+    const nodes=index.getNeighborhood('A.md').children.filter(n=>n.page.file===b);
+    equal(nodes.length,1,'Closing preview build requests cannot discard its coherent native incidence');
+    equal(nodes[0].page.path,b.path,'Preview coordinates follow case-only rename');
+    equal(index.titleFor(nodes[0].page),'Stable alias','Preview retains known facets');
+    ok(!index.isSemanticWriteReady('A.md',b.path),'Provisional host read never grants source write authority');return true;
+  }finally{o.close();}
+})()`));
+
 test('actual typography saves and resets retain on-demand authority with zero source work; mixed overlapping saves still recanonicalize', async()=>scenario(`(async()=>{
   const o=await onDemandFixture('v2-demand-typography',{typographyProfiles:{},baseFontSize:12.4,wrapNodeLabels:true});
   const {f,index}=o;let release,releaseStorage;const restores=[];

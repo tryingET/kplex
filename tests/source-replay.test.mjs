@@ -1,4 +1,8 @@
-/** SI4a production replay/semantic owner tests; public host doubles never replace storage/compiler logic. */
+/**
+ * SI4a production replay/semantic owner tests, including explicit arrow policy over retained neutral
+ * source heads without Markdown rereads or source writes. Public host doubles never replace
+ * storage/compiler logic; each fixture owns and retires its temporary modules and repository.
+ */
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
@@ -7,6 +11,38 @@ import { titleFixture } from "./support/urlTitleFixture.mjs";
 import { centerGateSettings, currentNeighborhoodView, fullCenterIndex } from "./support/requestedCenterGateFixture.mjs";
 import { loadPortableModules } from "./support/portableTypeScript.mjs";
 const { exports: { RelationType } } = loadPortableModules(["src/core/graph/relations.ts"]);
+
+test("warm neutral owner replay preserves Implements direction without source reacquisition or writes", async () => {
+  const f = replayFixture();
+  try {
+    const ids = ["A-Star.md", "Uniform Cost Search.md"];
+    f.add(ids[0], "# Related\n[[Uniform Cost Search#Related]]\n", { Implements: "[[Uniform Cost Search]]" });
+    f.add(ids[1], "# Related\n[[A-Star#Related]]\n");
+    f.resolutions.set("Uniform Cost Search", ids[1]); f.resolutions.set("A-Star", ids[0]);
+    f.app.metadataCache.resolvedLinks[ids[0]] = { [ids[1]]: 2 };
+    f.app.metadataCache.resolvedLinks[ids[1]] = { [ids[0]]: 1 };
+    await acquire(f, ids);
+    const heads = await Promise.all(ids.map(id => f.repository.inspect(id)));
+    const variant = { ...settings, hierarchy: { ...settings.hierarchy, leftFriends: ["Implements"] } };
+    const expected = await hostOracle(f, ids, variant);
+    const counters = f.acquisition.getCounters();
+    f.app.vault.read = f.app.vault.cachedRead = async () => assert.fail("Current neutral heads cannot require Markdown rereads");
+    f.repository.replace = async () => assert.fail("Direction policy cannot rewrite neutral source facts");
+    f.acquisition.parse = async () => assert.fail("Direction policy cannot reparse neutral source facts");
+    for (const order of [ids, [...ids].reverse()]) {
+      const replay = await f.acquisition.prepareCachedSemantics(order, policy({ settings: variant }), presentation, runtime());
+      assert.equal(replay.outcome, "ready");
+      assert.deepEqual(semanticView(replay.compilation), semanticView(expected));
+      const a = [...replay.compilation.nodes.values()].find(node => node.semanticPath === ids[0]);
+      const b = [...replay.compilation.nodes.values()].find(node => node.semanticPath === ids[1]);
+      assert.equal(a.neighbours.get(b.id).direction, 2);
+      assert.equal(b.neighbours.get(a.id).direction, 1);
+      assert([...replay.compilation.declarations()].some(item => item.sourceKind === "obsidian-link"));
+    }
+    assert.deepEqual(await Promise.all(ids.map(id => f.repository.inspect(id))), heads);
+    assert.deepEqual(f.acquisition.getCounters(), counters);
+  } finally { f.close(); }
+});
 
 /** Persist all neutral facts once; policies must never go through this helper. */
 async function acquire(f, ids) {

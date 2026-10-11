@@ -93,6 +93,31 @@ test("transient ExcaliBrain drawing paths are discarded from imported and saved 
   assert.equal(Object.hasOwn(migrateAndMergeSettings({ excalibrainFilepath: "Custom transient drawing.md" }), "excalibrainFilepath"), false);
 });
 
+test("remote node image consent is explicit, durable and independent of foreign graph settings", /** Only boolean true grants permission; no semantic signature changes. */ () => {
+  for (const value of [undefined, null, false, "true", "false", 1, {}, []]) {
+    assert.equal(migrateAndMergeSettings({ allowRemoteNodeImages: value }).allowRemoteNodeImages, false);
+  }
+  assert.equal(defaults.allowRemoteNodeImages, false);
+  const consent = migrateAndMergeSettings({ allowRemoteNodeImages: true });
+  assert.equal(migrateAndMergeSettings(JSON.parse(JSON.stringify(consent))).allowRemoteNodeImages, true);
+  assert.equal(importExcaliBrainGraphSettings({ ...fixture, allowRemoteNodeImages: true }, defaults).allowRemoteNodeImages, false);
+  assert.equal(importExcaliBrainGraphSettings(fixture, consent).allowRemoteNodeImages, true);
+  assert.deepEqual(classifySettingsChange(captureSettingsPolicy(defaults), captureSettingsPolicy(consent)), {
+    semanticInvalidation: false, presentationFacets: false, searchTerms: false,
+    nodeVisuals: true, render: true, typographyOnly: false, changedKeys: ["allowRemoteNodeImages"],
+  });
+  assert.equal(encodeIndexSettingsSignature(consent), encodeIndexSettingsSignature(defaults));
+  const plugin = { manifest: { id: "k-plex" }, settings: structuredClone(defaults),
+    translator: createObsidianTranslator(), index: { unassignedOntologyFields: () => [], allPages: () => [] } };
+  const tab = new KplexSettingTab({}, plugin);
+  /** Flatten existing declarative pages/groups without emulating native controls. */
+  const rows = items => items.flatMap(item => [item, ...rows(item.items ?? [])]);
+  const row = rows(tab.getSettingDefinitions()).find(item => item.control?.key === "allowRemoteNodeImages");
+  assert.equal(row?.control?.type, "toggle");
+  assert.equal(row?.name, "Allow remote node images");
+  assert.match(row?.desc ?? "", /contacts their host/);
+});
+
 test("cross-link visibility persists across reload and uses a presentation-only Plex settings toggle", async () => {
   assert.equal(defaults.showCrossLinks, false, "fresh and unspecified settings retain the committed 0.1.2 disabled default");
   assert.equal(migrateAndMergeSettings({ showCrossLinks: "invalid" }).showCrossLinks, false);

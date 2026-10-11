@@ -4283,6 +4283,16 @@ export const englishCatalog = {
     context: "Declarative K-Plex settings page copy.",
     params: [],
   },
+  "settings.ui.allowRemoteNodeImages": {
+    message: "Allow remote node images",
+    context: "Explicit network permission in the node images settings group. Defaults off.",
+    params: [],
+  },
+  "settings.ui.allowRemoteNodeImages.help": {
+    message: "Displaying HTTP(S) thumbnails and node images contacts their host, which receives your IP address and the image URL. Off by default; vault images still work. Turning this off prevents new loads but cannot undo requests already sent.",
+    context: "Privacy disclosure for remote node imagery; separate from explicitly opening or embedding web pages.",
+    params: [],
+  },
   "settings.ui.image.link.shown.as.a.small.preview.before.the.node.labe": {
     message: "Image link shown as a small preview before the node label. Works with YAML or Dataview-style inline fields.",
     context: "Declarative K-Plex settings page copy.",
