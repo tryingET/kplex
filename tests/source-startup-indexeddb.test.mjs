@@ -535,13 +535,16 @@ test("late Eager bootstrap cannot certify an old-policy snapshot over a current 
   } finally { await browser.cleanup(); }
 });
 
-for (const damage of ["missing", "metadata", "chunks", "offline-edit"]) {
-  test(`source-backed startup recovers ${damage} graph acceleration without reacquiring valid owners`, async () => {
+/** A cancelled foreground owner leaves reusable parser input, never durable source authority. */
+for (const [damage, cancelledForeground] of [
+  ["missing", false], ["metadata", false], ["chunks", false], ["offline-edit", false], ["offline-edit", true], ["offline-edit", "during-parser"],
+]) {
+  test(`source-backed startup recovers ${damage} graph acceleration without reacquiring valid owners${cancelledForeground === "during-parser" ? " during foreground parsing" : cancelledForeground ? " after cancelled foreground parsing" : ""}`, async () => {
     const browser = await chromiumHarness(bundle);
     try {
       assert.equal(await browser.evaluate(contributorBrowserInitialize), true);
       assert.equal(await browser.evaluate(`(async()=>{
-        const assert=Object.assign((v,m)=>ok(v,m),{equal}),M=sourceModules,damage=${JSON.stringify(damage)},name='si5-graph-'+damage,f=await fixture(name);
+        const assert=Object.assign((v,m)=>ok(v,m),{equal}),M=sourceModules,damage=${JSON.stringify(damage)},cancelledForeground=${JSON.stringify(cancelledForeground)},name='si5-graph-'+damage,f=await fixture(name);
         const collect=${collect.toString()},hostOracle=${hostOracle.toString()},fullCenterIndex=${fullCenterIndex.toString()};
         const currentNeighborhoodView=${currentNeighborhoodView.toString()},centerGateSettings=${centerGateSettings.toString()};
         let initial,index,oracle,release;
@@ -568,7 +571,45 @@ for (const damage of ["missing", "metadata", "chunks", "offline-edit"]) {
           index=new M.GraphIndex({app:f.app,settings:{indexingMode:'eager',...semantic,...view,lastActivePath:'A.md',pinnedNodes:[]},getIndexSourceRevision:()=>0},f.app);
           const originalParse=index.metadataParser.parse.bind(index.metadataParser);let actualParses=0;
           index.metadataParser.parse=(...args)=>{actualParses++;return originalParse(...args)};
-          index.scheduleOrphanCleanup=()=>{};release=index.acquireSemanticDemand('A.md');
+          index.scheduleOrphanCleanup=()=>{};
+          if(cancelledForeground==='during-parser'){
+            ok(await index.initializeOnDemandBaseline(),'Real foreground structural baseline');
+            const originalCompare=index.sourceAcquisition.durableHostInventory.bind(index.sourceAcquisition);
+            const checkpoint=index.sourceAcquisition.backgroundCheckpoint;
+            let resumeComparison,releaseParser,comparisonEntered,parserEntered,checkpointEntered,comparisonReturned=false;
+            const comparisonReached=new Promise(resolve=>{comparisonEntered=resolve}),parserReached=new Promise(resolve=>{parserEntered=resolve});
+            const comparisonHold=new Promise(resolve=>{resumeComparison=resolve}),parserHold=new Promise(resolve=>{releaseParser=resolve});
+            const checkpointReached=new Promise(resolve=>{checkpointEntered=resolve});
+            // P4 captures a real durable old metadata family, then P2 owns the actual current body
+            // parse. Resume comparison before the optional parser write, preserving native fences.
+            index.sourceAcquisition.durableHostInventory=async(...args)=>{const result=await originalCompare(...args);if(args[0]==='A.md'&&!comparisonReturned){comparisonEntered();await comparisonHold;comparisonReturned=true;}return result;};
+            index.sourceAcquisition.backgroundCheckpoint=()=>{const pending=checkpoint();if(comparisonReturned)checkpointEntered();return pending;};
+            index.metadataParser.parse=async(...args)=>{actualParses++;const body=await originalParse(...args);parserEntered();await parserHold;return body;};
+            try{
+              const inventory=index.sourceAcquisition.reconcile();await comparisonReached;
+              const foreground=index.withForegroundPriority(()=>index.patchMarkdownPaths(['A.md'],{useDurableCache:true}),2);
+              await parserReached;resumeComparison();await checkpointReached;releaseParser();
+              await foreground;ok(await inventory,'Interleaved actual source inventory closes');
+            }finally{
+              resumeComparison?.();releaseParser?.();index.sourceAcquisition.durableHostInventory=originalCompare;
+              index.sourceAcquisition.backgroundCheckpoint=checkpoint;
+              index.metadataParser.parse=(...args)=>{actualParses++;return originalParse(...args)};
+            }
+          }else if(cancelledForeground){
+            ok(await index.initializeOnDemandBaseline(),'Real foreground structural baseline');
+            let foregroundCurrent=true;const putBody=index.indexedDb.putBody.bind(index.indexedDb);
+            // Cancel the graph owner only after its actual current-version parser write completes.
+            // Source inventory has not run, and this optional input grants no source authority.
+            index.indexedDb.putBody=async(...args)=>{const saved=await putBody(...args);ok(saved,'Current parser input stored');foregroundCurrent=false;return saved;};
+            const patch=await index.patchMarkdownPaths(['A.md'],{useDurableCache:true,isCurrent:()=>foregroundCurrent});
+            index.indexedDb.putBody=putBody;
+            equal(patch.outcome,'cancelled','Foreground work is superseded before source acquisition/publication');
+            equal(patch.count,0,'No graph source committed');equal(actualParses,1,'Real foreground parser ran once');
+            equal(f.reads.slice(readsBefore),['A.md'],'Real foreground body read once');
+            equal((await index.indexedDb.sources.inspect('A.md')).head,heads.find(h=>h.sourceId==='A.md'),'Retired neutral head remains unchanged');
+            ok(await index.indexedDb.getBody('A.md',f.files.get('A.md').stat.mtime),'Current-mtime optional body survives cancellation');
+          }
+          release=index.acquireSemanticDemand('A.md');
           ok((await index.restorePersistedSnapshot(['A.md'])).restored,'Source progress restores requested startup');
           if(index.hasPendingSnapshotHydration())await index.waitForSnapshotHydration();
           ok(index.hasSourceBackedStartup(),'Distinct source-backed startup, not full graph authority');
@@ -595,6 +636,43 @@ for (const damage of ["missing", "metadata", "chunks", "offline-edit"]) {
           index.scheduleSnapshotPersist();equal(index.snapshotPersistTimer,null,'Partial scopes cannot overwrite full graph pointer');
           return true;
         } finally {release?.();oracle?.destroy();initial?.destroy();index?.destroy();f.close()}
+      })()`), true);
+    } finally { await browser.cleanup(); }
+  });
+}
+
+/** Ambiguous parser-cache versions still require native input before authenticating a new head. */
+for (const drift of ["same-mtime size", "same-mtime ctime", "different-mtime ctime", "observed different-mtime edit"]) {
+  test(`restart body reuse refuses ${drift} parser-cache collisions`, async () => {
+    const browser = await chromiumHarness(bundle);
+    try {
+      assert.equal(await browser.evaluate(contributorBrowserInitialize), true);
+      assert.equal(await browser.evaluate(`(async()=>{
+        const M=sourceModules,drift=${JSON.stringify(drift)},f=await fixture('restart-body-collision-'+drift);
+        let acquisition;
+        try{
+          const file=f.add('A.md','Status:: Original');await f.acquire();
+          const before=(await f.repository.inspect(file.path)).head;f.acquisition.close();
+          acquisition=new M.ObsidianSourceAcquisition(f.app,f.cache,async text=>{f.parses.push(text);return M.parseBodyMetadata(text);});
+          acquisition.start();
+          if(drift.startsWith('different-mtime')||drift.startsWith('observed'))file.stat.mtime++;
+          if(drift.includes('size'))file.stat.size++;
+          if(drift.includes('ctime'))file.stat.ctime++;
+          f.texts.set(file.path,'Status:: Changed');
+          // A path/mtime collision cannot certify an incarnation or an observed edit, even when
+          // the optional parser record has the current grammar and matching modification time.
+          ok(await f.cache.putBody(file.path,file.stat.mtime,M.parseBodyMetadata('Status:: Original')),'Colliding old parser input stored');
+          if(drift.startsWith('observed'))f.app.vault.trigger('modify',file);
+          ok(await acquisition.reconcile(),'Actual canonical source reconciliation closes');
+          equal(f.reads,[file.path],'Ambiguous cached body cannot suppress the actual changed read');
+          equal(f.parses.length,1,'Actual changed native body parsed once');
+          equal(acquisition.getCounters().legacyBodies,0,'Colliding optional body never borrowed');
+          const after=await f.repository.inspect(file.path);ok(after.saved,'Replacement source is durable');
+          ok(after.head.sourceRevision!==before.sourceRevision,'New canonical source revision authenticated');
+          const values=[];equal(await f.repository.visit(file.path,'values',records=>{values.push(...records);return true;}),'ready','Replacement family decoded');
+          ok(values.some(record=>record.kind==='inline-payload'&&record.text==='Changed'),'Actual changed payload retained');
+          return true;
+        }finally{acquisition?.close();f.close();}
       })()`), true);
     } finally { await browser.cleanup(); }
   });

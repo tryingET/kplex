@@ -1,6 +1,7 @@
 /**
  * Validates K-Plex localization catalog contracts, bundled locale coverage, host-language fallback,
- * shortcut presentation and the source-wide user-facing literal ownership gate.
+ * shortcut presentation and the source-wide user-facing literal ownership gate. Literal reference
+ * classification remains source-owned across locales; values are never reinterpreted as templates.
  */
 import assert from "node:assert/strict";
 import { auditUserCopy } from "./support/localizationAudit.mjs";
@@ -106,6 +107,57 @@ test("English catalog is strict, typed at source, and remains the fallback", () 
   assert.equal(futureGerman("search.placeholder"), "Suchen…", "missing exact-locale keys must fall back to the base locale");
   assert.equal(futureGerman("command.openGraph"), "Open graph", "missing locale keys must fall back to English");
   assert.equal(localization.createTranslator("zz-ZZ")("command.openGraph"), "Open graph", "unknown locale must fall back to English");
+});
+
+/** Named reference metadata reflects each consumer's semantics, not a global parameter-name heuristic. */
+test("reference metadata distinguishes literal source target field names from descriptive labels", () => {
+  const translate = localization.createTranslator("en"), source = require(join(portableTemp,"src/lang/en.js")).englishCatalog;
+  for (const [key,entry] of Object.entries(source)) if(entry.params.length) {
+    assert(Array.isArray(entry.referenceParams),`${key} needs an explicit audited reference classification`);
+    assert(entry.referenceParams.every(name=>entry.params.includes(name)),`${key} reference names must be declared`);
+  }
+  assert.equal(translate("hide.confirmPair",{source:"Folder/A.md",target:"Folder/B.md"}), 'Hide "Folder/B.md" when "Folder/A.md" is the central note. Save the Hidden relationship in "Folder/A.md".');
+  assert.equal(translate("hide.retainsSources"),'Original property links, Markdown links and inline relationships are kept. Hiding is directional. It applies from note "A" to "B" when "A" is in the center. The connection may still be visible from the other note.');
+  assert.equal(translate("delete.cleanup.property",{field:"Private connection"}), 'Property: "Private connection"');
+  assert.equal(translate("delete.cleanup.sourceFailed",{path:"Folder/A.md"}), 'Source not changed: "Folder/A.md". Review it manually.');
+  assert.equal(translate("graph.evidenceDecision",{source:"Markdown link",resolution:"Child · Inferred"}), "Markdown link — Child · Inferred");
+  assert.equal(translate("graph.evidenceFieldDecision",{field:"Children",resolution:"Child · Defined"}), '"Children" — Child · Defined');
+  assert.equal(translate("references.sourceLine",{source:"Inline relationship",line:4}), "Inline relationship · line 4");
+  assert.equal(translate("typography.deviceField",{device:"Desktop",field:"Node title"}), "Desktop: Node title");
+  assert.equal(translate("actions.targetPolicy",{target:"Current center"}), "Target: Current center");
+  assert.equal(translate("relation.inverseStorage",{role:"Parent",property:"Children"}), 'Parent is stored on the Markdown note using the inverse document property "Children".');
+  assert.equal(translate("notice.tag",{name:"#Project"}), 'Tag: "#Project"');
+  assert.equal(translate("find.matches",{count:2}), "2 matches");
+});
+
+/** Template-owned wrappers normalize once; quote-like user values, backslashes and braces remain literal. */
+test("reference quotes inherit across locales and normalize existing paired wrappers without interpreting values", () => {
+  const value='A "quoted" \\ path {target} $&', expected='"'+value+'"';
+  for(const wrappers of [['',''],['"','"'],['“','”'],['„','“'],['« ',' »'],['»','«'],['「','」'],['『','』'],["'","'"],['“"','"”']]) {
+    const translate=localization.createTranslator("de",{de:{"note.existsNamed":{message:`Name: ${wrappers[0]}{name}${wrappers[1]}.`,context:"Synthetic wrapper regression.",params:["name"]}}});
+    assert.equal(translate("note.existsNamed",{name:value}),`Name: ${expected}.`);
+  }
+  assert.equal(localization.createTranslator("en")("node.accessibleLabel",{label:'"A"',path:'C:\\{label}.md'}),'""A"" — "C:\\{label}.md"',"Quoted values are actual user data, not template wrappers");
+  const plain=localization.createTranslator("de",{de:{"references.sourceLine":{message:'“{source}” · {line}',context:"Descriptive source label has no literal-reference metadata.",params:["source","line"]}}});
+  assert.equal(plain("references.sourceLine",{source:"Inline relationship",line:2}),"“Inline relationship” · 2","Unmarked template punctuation remains owned by the translator");
+  for(const locale of ["de","es","fr","ja","nl","ru","zh-TW"]) {
+    const translate=localization.createTranslator(locale), text=translate("explain.removeConfirm",{note:"A.md",field:"Children",target:"B.md"});
+    for(const reference of ["A.md","Children","B.md"])assert(text.includes('"'+reference+'"'),`${locale} needs one shared ASCII reference wrapper`);
+    assert.equal((text.match(/"/g)??[]).length,6,`${locale} must not double template quote wrappers`);
+    assert(translate("notice.tag",{name:"#Project"}).includes('"#Project"'));
+  }
+});
+
+/** Source classification cannot drift through injected locale metadata or reference plural-count declarations. */
+test("reference metadata validation rejects malformed subsets duplicates count references and locale drift", () => {
+  for(const referenceParams of [null,"name",["missing"],["name","name"],[1]])assert.throws(()=>localization.validateCatalog("bad",{x:{message:"{name}",context:"Synthetic metadata validation.",params:["name"],referenceParams}}),/referenceParams/);
+  assert.throws(()=>localization.validateCatalog("bad",{x:{plural:{one:"{count}",other:"{count}"},countParam:"count",context:"Synthetic count classification.",params:["count"],referenceParams:["count"]}}),/countParam cannot be a reference/);
+  assert.throws(()=>localization.createTranslator("de",{de:{"note.existsNamed":{message:"{name}",context:"Synthetic metadata drift.",params:["name"],referenceParams:[]}}}),/reference parameters differ/);
+  assert.throws(()=>localization.createTranslator("de",{de:{"references.sourceLine":{message:"{source} {line}",context:"Synthetic descriptive drift.",params:["source","line"],referenceParams:["source"]}}}),/reference parameters differ/);
+  const entry={message:"{name}",context:"Synthetic inherited metadata.",params:["name"],referenceParams:["name"]};
+  assert.equal(localization.createTranslator("de",{de:{"note.existsNamed":entry}})("note.existsNamed",{name:"A.md"}),'"A.md"');
+  const module=require(join(portableTemp,"src/lang/de.js"));
+  assert.deepEqual(module.germanCatalog["hide.confirmPair"].referenceParams,["source","target"]);
 });
 
 test("every action explains its behavior beyond its label, and help is distinct from commands", () => {

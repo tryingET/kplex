@@ -1,4 +1,5 @@
 /**
+ * Touched canonical physical facets retire their cached exact-pair facade before selected reads.
  * Published graph repository for K-Plex. Eager sessions retain global source adoption; on-demand
  * sessions publish a body-free host baseline, then canonicalize bounded direct owners without global
  * inventory. Host-only count covers separate available local numbers from semantic/write authority;
@@ -55,8 +56,14 @@
  * launched by atomic source publication release that host turn before independent preparation.
  * Filtered scene gate reads reuse cached visible all-role incidence under its captured policy;
  * synchronous read epochs retire detached numerators without acquiring count proof or sources.
+ * Native renames remap every retained read owner synchronously; old coherent scopes never retain
+ * obsolete materialized coordinates while source repair closes.
+ * Node imagery remains lazy presentation data. Live consent and a visual epoch fence cache reads,
+ * pending durable-body results and mounted consumers without changing graph semantics or sources.
  */
 import { canonicalWebUrl } from "../adapters/obsidian/urlIdentity";
+import { remapGraphEndpoint } from "./remapGraphEndpoint";
+import { isRemoteNodeImageSource } from "../core/plex/nodeImagePolicy";
 import { yieldToHostTask } from "../adapters/obsidian/yieldToHostTask";
 import { ForegroundWorkScheduler, INDEX_WORK_PRIORITY, type IndexWorkPriority } from "./ForegroundWorkScheduler";
 import { HostMetadataPreview } from "./HostMetadataPreview";
@@ -65,7 +72,7 @@ import { graphCompilerSettingsFromLegacy, graphNodeViewFromLegacy } from "../ada
 import type { CompiledGraphNode, GraphCompilerRuntime, GraphCompilerSettings } from "../core/graph/compiler";
 import type { NodeId } from "../core/graph/model";
 import { estimateReferenceRecordBytes, sourceRevision, type SourceEntityFact, type SourceEntityRef } from "../core/graph/source";
-import { RelationEvidenceStore, emptyRelation, applyOntologyPrecedence, applyEvidenceToRelation } from "../core/graph/evidence";
+import { RelationEvidenceStore, emptyRelation, applyOntologyPrecedence, applyEvidenceDecisionsToRelation } from "../core/graph/evidence";
 import { Platform, TFile, TFolder, normalizePath, type App, type CachedMetadata } from "obsidian";
 import type KplexPlugin from "../main";
 import type { KplexSettings } from "../settings";
@@ -88,7 +95,7 @@ import { extractLinksFromValue, iterateFrontmatterAliasSteps } from "./fieldPars
 import { MAX_CACHED_SCOPE_RETAINED_BYTES } from "./CachedSourceSemantics";
 import { KplexIndexedDbCache, URL_ALIAS_FACET_VERSION, sanitizeIndexDiagnostics, type IndexedDbSnapshotMeta, type IndexDiagnosticEntry,
   type SnapshotWriteFailureReason } from "./IndexedDbCache";
-import { createGraphState, getGraphPage } from "./GraphState";
+import { createGraphState, getGraphPage, type GraphState } from "./GraphState";
 import type { EvidenceRole, EvidenceSourceKind, RelationEvidence } from "./RelationEvidence";
 import { MetadataParser } from "./MetadataParser";
 import {
@@ -187,12 +194,15 @@ type PreparedSemanticScope = Readonly<{
   evidence: RelationEvidenceStore;
   gates: GateStats;
   suppressedPaths: ReadonlySet<string>;
+  /** Preserve this coherent read preference across native coordinate changes, never source authority. */
+  retainedAfterRename?: boolean;
   retainedBytes: number;
 }>;
 
 /** Exact canonical pair publication. Retained views survive invalidation; authority never does. */
 type PreparedRelationshipPair = Readonly<{
   paths: readonly [string, string]; settings: GraphCompilerSettings; evidence: RelationEvidenceStore;
+  files: ReadonlyMap<string, TFile>;
   relations: ReadonlyMap<string, Relation | undefined>; policyRevision: number; sourceRevision: number;
   maintenanceRevision: number; bytes: number; current: () => boolean;
 }>;
@@ -559,6 +569,7 @@ export class GraphIndex {
   private previewSnapshotPublished = false;
   private activeSnapshotGeneration: string | null = null;
   private nodeVisualCache = new Map<string, { signature: string; visual: NodeVisual | null }>();
+  private nodeVisualRevision = 0;
   constructor(private plugin: KplexPlugin, private app: App = plugin.app) {
     this.workScheduler = new ForegroundWorkScheduler({
       /** The plugin-global index and storage belong to the main application window. */
@@ -2377,6 +2388,13 @@ export class GraphIndex {
     }
     for (const scope of this.semanticScopes.values()) if (scope.maintenanceRevision === maintenanceRevision
       && scope.policyRevision === this.semanticPolicyRevision && scope.sourceRevision === currentSourceRevision && scope.suppressedPaths.has(path)) return undefined;
+    // Rename closes source/count proof, while even sparse physical facets can be newer than the
+    // warm full graph. Prefer those coherent reads until a current scope above replaces them.
+    for (const scope of this.semanticScopes.values()) if (scope.retainedAfterRename
+      && scope.policyRevision === this.semanticPolicyRevision) {
+      const page = scope.pagesByPath.get(path);
+      if (page) return page;
+    }
     if (this.usesLocalForeground() && this.onDemandBaselineReady) {
       // A native baseline contains all host edges, while the early preview is deliberately capped.
       // Counts must never be limited by that preview/candidate cap.
@@ -2646,7 +2664,7 @@ export class GraphIndex {
       if (effects.searchTerms) this.titleCache.clear();
       if (search) this.installSearchIndex(search);
       if (effects.presentationFacets) this.suggestionCatalogCache = null;
-      if (effects.nodeVisuals) this.nodeVisualCache.clear();
+      if (effects.nodeVisuals) this.invalidateNodeVisuals();
       this.recordIndexDiagnostic("restore", facets?.pending ? "presentation-inputs-pending" : "presentation-settings-adapted",
         { changedKeys: [...keys], modified: facets?.pending ?? 0 });
       this.emitPresentation();
@@ -2748,33 +2766,56 @@ export class GraphIndex {
 
   private static readonly IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp"]);
 
-  private imageVisualFromValue(value: unknown, hostFile: TFile, mode: NodeVisual["mode"]): NodeVisual | null {
+  /** Resolve existing property syntax without I/O; skip denied remote candidates and try local fallback. */
+  private imageVisualFromValue(value: unknown, hostFile: TFile, mode: NodeVisual["mode"], allowRemote: boolean): NodeVisual | null {
     for (const target of extractLinksFromValue(this.app, value, hostFile)) {
-      if (/^https?:\/\//i.test(target)) {
+      if (isRemoteNodeImageSource(target)) {
+        if (!allowRemote) continue;
         return { mode, src: target, path: target, alt: target };
       }
-      const file = this.app.vault.getAbstractFileByPath(target);
+      const file = this.app.vault.getFileByPath(target);
       if (!(file instanceof TFile) || !GraphIndex.IMAGE_EXTENSIONS.has(file.extension.toLowerCase())) continue;
       return { mode, src: this.app.vault.getResourcePath(file), path: file.path, alt: file.basename };
     }
     return null;
   }
 
-  /**
-   * Resolve imagery only for the nodes a Plex is about to render. This deliberately stays outside
-   * GraphPage/persisted snapshots: frontmatter comes from Obsidian's metadata cache and Dataview-
-   * style inline fields come from K-Plex's existing parsed-body cache in one batched IndexedDB read.
-   */
+  /** Retire one changed node's cached visual without cancelling other visible nodes' resolution. */
   invalidateNodeVisual(path: string): void {
     this.nodeVisualCache.delete(path);
   }
 
+  /** Retire all visuals before consent changes can cross an await or notify a mounted surface. */
+  invalidateNodeVisuals(): void {
+    this.nodeVisualRevision += 1;
+    this.nodeVisualCache.clear();
+  }
+
+  /** Expose only the presentation epoch so consumers can reject already-resolved stale promises. */
+  getNodeVisualRevision(): number { return this.nodeVisualRevision; }
+
+  /**
+   * Resolve only requested visible nodes, outside GraphPage/snapshots. MetadataCache supplies
+   * frontmatter and one existing durable-body batch supplies cold inline fields. Consent participates
+   * in cache signatures; revocation, settings changes, invalidation and unload fence awaited results.
+   * Denied candidates fall through to the first allowed local value, then the normal node label.
+   */
   async resolveNodeVisuals(pages: readonly GraphPage[]): Promise<Map<string, NodeVisual>> {
     const result = new Map<string, NodeVisual>();
+    const revision = this.nodeVisualRevision;
+    const allowRemote = this.plugin.settings.allowRemoteNodeImages === true;
     const thumbnailField = normalizeFieldName(this.plugin.settings.thumbnailProperty);
     const replaceField = normalizeFieldName(this.plugin.settings.nodeImageProperty);
+    const attachmentDisplay = this.plugin.settings.attachmentImageDisplay;
+    /** Compare the live permission as well as the epoch, including callers with unsaved mutations. */
+    const current = (): boolean => !this.diagnosticsClosed && revision === this.nodeVisualRevision
+      && allowRemote === (this.plugin.settings.allowRemoteNodeImages === true)
+      && thumbnailField === normalizeFieldName(this.plugin.settings.thumbnailProperty)
+      && replaceField === normalizeFieldName(this.plugin.settings.nodeImageProperty)
+      && attachmentDisplay === this.plugin.settings.attachmentImageDisplay;
     const bodyRequests: Array<{ page: GraphPage; file: TFile; signature: string }> = [];
 
+    /** Read the configured normalized field without scanning any other note's metadata. */
     const frontmatterValue = (file: TFile, normalized: string): unknown => {
       if (!normalized) return undefined;
       const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
@@ -2788,12 +2829,12 @@ export class GraphIndex {
     for (const page of pages) {
       const file = page.file;
       if (!file) continue;
-      const signature = [file.stat.mtime, thumbnailField, replaceField, this.plugin.settings.attachmentImageDisplay].join("\u0001");
+      const signature = [file.stat.mtime, thumbnailField, replaceField, attachmentDisplay, allowRemote].join("\u0001");
       const cached = this.nodeVisualCache.get(page.path);
       if (cached?.signature === signature) { if (cached.visual) result.set(page.path, cached.visual); continue; }
 
       if (file.extension !== "md" && GraphIndex.IMAGE_EXTENSIONS.has(file.extension.toLowerCase())) {
-        const display = this.plugin.settings.attachmentImageDisplay;
+        const display = attachmentDisplay;
         const visual = display === "label" ? null : {
           mode: display === "image" ? "replace" as const : "thumbnail" as const,
           src: this.app.vault.getResourcePath(file), path: file.path, alt: file.basename,
@@ -2804,8 +2845,8 @@ export class GraphIndex {
       }
       if (file.extension !== "md") { this.nodeVisualCache.set(page.path, { signature, visual: null }); continue; }
 
-      const replacement = this.imageVisualFromValue(frontmatterValue(file, replaceField), file, "replace");
-      const thumbnail = replacement ? null : this.imageVisualFromValue(frontmatterValue(file, thumbnailField), file, "thumbnail");
+      const replacement = this.imageVisualFromValue(frontmatterValue(file, replaceField), file, "replace", allowRemote);
+      const thumbnail = replacement ? null : this.imageVisualFromValue(frontmatterValue(file, thumbnailField), file, "thumbnail", allowRemote);
       const visual = replacement ?? thumbnail;
       if (visual) {
         this.nodeVisualCache.set(page.path, { signature, visual });
@@ -2815,8 +2856,8 @@ export class GraphIndex {
 
       const hot = this.fieldCache.get(page.path);
       if (hot && hot.mtime === file.stat.mtime) {
-        const inlineReplacement = this.imageVisualFromValue(hot.body.inlineFields[replaceField], file, "replace");
-        const inlineThumbnail = inlineReplacement ? null : this.imageVisualFromValue(hot.body.inlineFields[thumbnailField], file, "thumbnail");
+        const inlineReplacement = this.imageVisualFromValue(hot.body.inlineFields[replaceField], file, "replace", allowRemote);
+        const inlineThumbnail = inlineReplacement ? null : this.imageVisualFromValue(hot.body.inlineFields[thumbnailField], file, "thumbnail", allowRemote);
         const inlineVisual = inlineReplacement ?? inlineThumbnail;
         this.nodeVisualCache.set(page.path, { signature, visual: inlineVisual });
         if (inlineVisual) result.set(page.path, inlineVisual);
@@ -2827,16 +2868,17 @@ export class GraphIndex {
 
     if (bodyRequests.length) {
       const bodies = await this.indexedDb.getBodies(bodyRequests.map(({ file }) => ({ path: file.path, mtime: file.stat.mtime })));
+      if (!current()) return new Map();
       for (const { page, file, signature } of bodyRequests) {
         const body = bodies.get(file.path);
-        const replacement = body ? this.imageVisualFromValue(body.inlineFields[replaceField], file, "replace") : null;
-        const thumbnail = body && !replacement ? this.imageVisualFromValue(body.inlineFields[thumbnailField], file, "thumbnail") : null;
+        const replacement = body ? this.imageVisualFromValue(body.inlineFields[replaceField], file, "replace", allowRemote) : null;
+        const thumbnail = body && !replacement ? this.imageVisualFromValue(body.inlineFields[thumbnailField], file, "thumbnail", allowRemote) : null;
         const visual = replacement ?? thumbnail;
         this.nodeVisualCache.set(page.path, { signature, visual });
         if (visual) result.set(page.path, visual);
       }
     }
-    return result;
+    return current() ? result : new Map();
   }
 
   setSearchEntryPoints(paths: string[]): boolean {
@@ -3883,7 +3925,10 @@ export class GraphIndex {
 
     const next = createGraphState();
     for (const saved of savedByPath.values()) addPersistedPageToState(next, saved, this.app);
-    for (const saved of savedByPath.values()) hydratePersistedPageRelations(next, saved);
+    const currentRelationPaths = new Set<string>();
+    for (const saved of savedByPath.values()) {
+      if (hydratePersistedPageRelations(next, saved)) currentRelationPaths.add(saved.path);
+    }
     next.discoveredFields = new Map(meta.discoveredFields);
     // Current presentation and search are prepared before the targeted preview becomes visible.
     // Attribute this newly awaited work to the existing search watchdog phase, not the page fetch.
@@ -3901,7 +3946,8 @@ export class GraphIndex {
     if (cachedCurrent?.()) for (const saved of savedByPath.values()) {
       const page = next.pages.get(saved.path);
       if (!page) continue;
-      const completeCover = (saved.relations ?? []).every(relation => next.pages.has(relation.targetPath));
+      const completeCover = currentRelationPaths.has(saved.path)
+        && (saved.relations ?? []).every(relation => next.pages.has(relation.targetPath));
       if (completeCover) this.cachedSnapshotPages.add(page);
       else this.preparedPageInfo.set(page, { entityId: this.semanticSourceRef(page).id,
         policyRevision: this.semanticPolicyRevision, settings: this.fullSemanticSettings, completeRelations: false });
@@ -4090,7 +4136,7 @@ export class GraphIndex {
       next.discoveredFields = new Map(meta.discoveredFields);
 
       // Schema-1/early schema-2 snapshots without cached relations still need the authoritative
-      // resolver after evidence has loaded. New schema-3 snapshots take the fast relation path above.
+      // resolver after evidence has loaded. Current-direction-policy rows take the fast relation path above.
       if (!relationsHydrated) {
         this.setSnapshotHydrationPhase(run, "resolve");
         const resolved = await finalizeHydratedGraphStateCooperative(
@@ -5592,18 +5638,24 @@ export class GraphIndex {
 
   /** Retire derived views for prepared paths without reparsing canonical URL identities.
    * Non-URL paths still select their current scoped facade through get(); canonical URLs always
-   * have that same identity in get(), so a dense source commit can use its direct map lookup. */
+   * have that same identity in get(), so a dense source commit can use its direct map lookup.
+   * Physical facet changes retire their exact-pair facade before any selected reader can reuse it. */
   private invalidatePatchedPages(paths: Iterable<string>): void {
     for (const path of paths) {
       this.titleCache.delete(path);
       this.nodeVisualCache.delete(path);
       const canonical = this.state.pages.get(path);
+      // Exact-pair facades copy physical facets as well as relations. A source/structural commit
+      // can change those facets without changing the pair revision, so retire this key before get()
+      // can return its former physical file after canonical dematerialization.
+      if (canonical) this.relationshipPairViews.delete(canonical);
       const page = canonical?.url ? canonical : this.get(path);
       // Prepared commits can mutate incoming incidence without replacing the broad cache epoch.
       // Retire both the selected reader and canonical fallback, while unrelated URL readers reuse
       // their projections throughout background indexing.
       if (canonical) this.urlProjectionCache.delete(canonical);
       if (page) {
+        this.relationshipPairViews.delete(page);
         this.urlProjectionCache.delete(page);
         this.relationViewCache.delete(page);
       }
@@ -5761,6 +5813,7 @@ export class GraphIndex {
       if (!current() || this.relationshipPairBytes - (previous?.bytes ?? 0) + bytes > MAX_CACHED_SCOPE_RETAINED_BYTES) return false;
       // No await below: both directed relations and exact provenance/negative coverage publish once.
       const pair: PreparedRelationshipPair = { paths: [sourcePath, targetPath], settings, evidence,
+        files: new Map(physical.map(/** Bind negative as well as positive reads to the captured native endpoints. */ token => [token.path, token.file])),
         relations: new Map([[sourcePath, pages.get(sourcePath)!.neighbours.get(targetPath)], [targetPath, pages.get(targetPath)!.neighbours.get(sourcePath)]]),
         policyRevision, sourceRevision, maintenanceRevision, bytes,
         current: () => current() && prepared.isCurrent() };
@@ -5823,70 +5876,71 @@ export class GraphIndex {
     return [...editable].sort((a, b) => (rank.get(a) ?? 9) - (rank.get(b) ?? 9) || (a === sourcePath ? -1 : 1));
   }
 
-  /** Materialize one physical folder page without traversing the Vault tree. */
-  private ensureFolderTreePage(folderPath: string, touched: Set<string>): GraphPage {
+  /** Materialize a known folder in the supplied graph owner without traversing the Vault tree. */
+  private ensureFolderTreePage(folderPath: string, touched: Set<string>, state = this.state): GraphPage {
     const path = folderPath ? `folder:${folderPath}` : "folder:/";
-    let page = this.state.pages.get(path);
+    let page = state.pages.get(path);
     if (!page) {
       page = {
         path, file: null, name: folderPath.split("/").filter(Boolean).pop() ?? "/", url: null, isFolder: true, isTag: false, mtime: null,
         neighbours: new Map(), aliases: [], tags: [], noteType: null, primaryStyleTag: null,
         styleTags: [], maxLabelLength: this.plugin.settings.baseNodeStyle.maxLabelLength ?? 30,
       };
-      this.state.pages.set(path, page);
-      this.state.lowercasePathMap.set(path.toLowerCase(), path);
+      state.pages.set(path, page);
+      state.lowercasePathMap.set(path.toLowerCase(), path);
       touched.add(path);
     }
     return page;
   }
 
-  /** Ensure one canonical file-tree declaration and resolve both relation-map directions. */
-  private ensureFileTreeEdge(parent: GraphPage, child: GraphPage, touched: Set<string>): void {
-    const exists = this.state.evidence.between(parent.path, child.path).some((item) =>
+  /** Ensure one owner-local file-tree declaration and both relation-map directions. */
+  private ensureFileTreeEdge(parent: GraphPage, child: GraphPage, touched: Set<string>, state = this.state): void {
+    const exists = state.evidence.between(parent.path, child.path).some((item) =>
       item.sourceKind === "file-tree" && item.declaredByPath === parent.path && item.declaredTargetPath === child.path,
     );
     if (!exists) {
-      this.state.evidence.addPair(parent.path, child.path, "child", RelationType.DEFINED, LinkDirection.FROM, {
+      state.evidence.addPair(parent.path, child.path, "child", RelationType.DEFINED, LinkDirection.FROM, {
         sourceKind: "file-tree", definition: "file-tree",
       });
     }
-    resolveEvidencePair(this.state.pages, this.state.evidence, parent.path, child.path);
-    resolveEvidencePair(this.state.pages, this.state.evidence, child.path, parent.path);
+    resolveEvidencePair(state.pages, state.evidence, parent.path, child.path);
+    resolveEvidencePair(state.pages, state.evidence, child.path, parent.path);
     touched.add(parent.path);
     touched.add(child.path);
   }
 
   /** Ensure root-to-folder ancestry from the known path only; never enumerate unrelated files/folders. */
-  private ensureFolderTreePath(folderPath: string, touched: Set<string>): GraphPage {
-    let parent = this.ensureFolderTreePage("", touched);
+  private ensureFolderTreePath(folderPath: string, touched: Set<string>, state = this.state): GraphPage {
+    let parent = this.ensureFolderTreePage("", touched, state);
     let currentPath = "";
     for (const part of folderPath.split("/").filter(Boolean)) {
       currentPath = currentPath ? `${currentPath}/${part}` : part;
-      const folder = this.ensureFolderTreePage(currentPath, touched);
-      this.ensureFileTreeEdge(parent, folder, touched);
+      const folder = this.ensureFolderTreePage(currentPath, touched, state);
+      this.ensureFileTreeEdge(parent, folder, touched, state);
       parent = folder;
     }
     return parent;
   }
 
-  private reconcileFileTreeMembership(file: TFile | TFolder): Set<string> {
+  /** Replace only this endpoint's native parent in its supplied graph, preserving note evidence. */
+  private reconcileFileTreeMembership(file: TFile | TFolder, state = this.state): Set<string> {
     const touched = new Set<string>();
     const path = file instanceof TFolder ? `folder:${file.path}` : file.path;
-    const filePage = this.state.pages.get(path);
+    const filePage = state.pages.get(path);
     if (!filePage) return touched;
-    const oldParents = this.state.evidence.declarationsTouching(path)
+    const oldParents = state.evidence.declarationsTouching(path)
       .filter((item) => item.sourceKind === "file-tree" && item.declaredTargetPath === path && item.declaredByPath.startsWith("folder:"))
       .map((item) => item.declaredByPath);
-    this.state.evidence.removeDeclarationsTouching(path, (item) =>
+    state.evidence.removeDeclarationsTouching(path, (item) =>
       item.sourceKind === "file-tree" && item.declaredTargetPath === path && item.declaredByPath.startsWith("folder:"));
     for (const parentPath of oldParents) {
-      resolveEvidencePair(this.state.pages, this.state.evidence, parentPath, path);
-      resolveEvidencePair(this.state.pages, this.state.evidence, path, parentPath);
+      resolveEvidencePair(state.pages, state.evidence, parentPath, path);
+      resolveEvidencePair(state.pages, state.evidence, path, parentPath);
       touched.add(parentPath);
     }
 
-    const parent = this.ensureFolderTreePath(file.path.split("/").slice(0, -1).join("/"), touched);
-    this.ensureFileTreeEdge(parent, filePage, touched);
+    const parent = this.ensureFolderTreePath(file.path.split("/").slice(0, -1).join("/"), touched, state);
+    this.ensureFileTreeEdge(parent, filePage, touched, state);
     return touched;
   }
 
@@ -5921,8 +5975,10 @@ export class GraphIndex {
     }
   }
 
-  /** Retire provisional endpoint owners and their neighbors without certifying unrelated canonical scopes. */
-  private retireHostEndpoint(path: string, replacement?: TFile): boolean {
+  /** Retire provisional endpoint owners without source certification; rename callers defer notification
+   * until their retained graph coordinates are coherent, while ordinary availability calls notify now. */
+  private retireHostEndpoint(path: string, replacement?: TFile,
+    options: Readonly<{ notify?: boolean; retainMovedReads?: boolean }> = {}): boolean {
     const affected = new Set<string>([path, ...this.hostPreview.removeSource(path)]);
     if (replacement) {
       affected.add(replacement.path);
@@ -5931,8 +5987,11 @@ export class GraphIndex {
     let changed = false;
     for (const [center, scope] of this.hostPreviewScopes) {
       if (![...affected].some(target => center === target || scope.pages.has(target))) continue;
-      this.hostPreviewScopes.delete(center);
       this.hostPreviewRequests.set(center, (this.hostPreviewRequests.get(center) ?? 0) + 1);
+      // A newer native preview can be the only readable incidence during canonical source repair.
+      // Rename remaps this exact file below; the request token still rejects late old-path builds.
+      if (options.retainMovedReads && replacement && scope.pages.get(path)?.file === replacement) continue;
+      this.hostPreviewScopes.delete(center);
       changed = true;
     }
     // Builds which have not published yet retain only a request token, rather than a scope.
@@ -5952,7 +6011,7 @@ export class GraphIndex {
     if (changed) {
       this.physicalSearchMerge = null;
       this.searchCandidateCache.clear();
-      this.emitPresentation();
+      if (options.notify !== false) this.emitPresentation();
     }
     return changed;
   }
@@ -5971,6 +6030,80 @@ export class GraphIndex {
     void this.refreshUrlOwner(file.path, true, undefined, acquired);
   }
 
+  /**
+   * Remap only retained endpoints bound to the exact renamed TFile. These finite read owners are
+   * separate from the main graph; keeping an old path with the new native file causes duplicate
+   * or stale-label presentation. Preserve coherent incidence until ordinary source repair replaces
+   * it, but invalidate captured source/count identity rather than certifying the remapped scope.
+   */
+  private remapPublishedFileReads(oldPath: string, file: TFile): boolean {
+    let changed = false;
+    const seen = new Map<Map<string, GraphPage>, boolean>();
+    /** Use the same owner-local coordinate/evidence boundary as the canonical graph. */
+    const remap = (state: GraphState): boolean => {
+      if (seen.has(state.pages)) return seen.get(state.pages)!;
+      const page = state.pages.get(oldPath), collision = state.pages.get(file.path);
+      if (page?.file !== file || collision?.file && collision.file !== file) { seen.set(state.pages, false); return false; }
+      remapGraphEndpoint(state, oldPath, file.path,
+        /** Native filename changes do not overwrite configured aliases or note properties. */ renamed => {
+          renamed.file = file; renamed.name = file.basename; renamed.mtime = file.stat.mtime;
+          this.preparedPageInfo.delete(renamed);
+        });
+      if (state.evidence.declarationsTouching(file.path).some(
+        /** Only scopes which already expose file-tree ancestry need native-parent repair. */ item => item.sourceKind === "file-tree" && item.declaredTargetPath === file.path)) {
+        this.reconcileFileTreeMembership(file, state);
+      }
+      changed = true;
+      seen.set(state.pages, true);
+      return true;
+    };
+    for (const [center, scope] of this.semanticScopes) {
+      if (scope.pagesByPath.get(oldPath)?.file !== file) continue;
+      const state = { ...createGraphState(), pages: new Map(scope.pagesByPath), evidence: scope.evidence };
+      if (!remap(state)) continue;
+      /** Retained coverage changes coordinates, never the original source proof. */
+      const paths = (values: ReadonlySet<string>): Set<string> => new Set([...values].map(
+        /** Keep unrelated coverage coordinates, replacing only this native endpoint. */ path => path === oldPath ? file.path : path));
+      const nextCenter = center === oldPath ? file.path : center;
+      this.semanticScopes.delete(center);
+      this.semanticScopes.set(nextCenter, { ...scope, centerPath: nextCenter, pagesByPath: state.pages,
+        completePaths: paths(scope.completePaths), suppressedPaths: paths(scope.suppressedPaths), maintenanceRevision: -1, retainedAfterRename: true });
+      this.releasedSemanticScopePaths.delete(center);
+    }
+    for (const scopes of [this.onDemandCachedScopes, this.onDemandHostScopes, this.hostPreviewScopes]) {
+      for (const [center, state] of scopes) if (remap(state)) {
+        state.lowercasePathMap.delete(oldPath.toLowerCase()); state.lowercasePathMap.set(file.path.toLowerCase(), file.path);
+        this.localScopeCertificates.delete(state);
+        if (center === oldPath) { scopes.delete(center); scopes.set(file.path, state); }
+      }
+    }
+    for (const [center, retained] of this.retainedLocalScopes) if (remap(retained.state)) {
+      this.localScopeCertificates.delete(retained.state);
+      if (center === oldPath) { this.retainedLocalScopes.delete(center); this.retainedLocalScopes.set(file.path, retained); }
+    }
+    for (const [key, pair] of this.relationshipPairs) if (pair.files.get(oldPath) === file) {
+      const paths: readonly [string, string] = [pair.paths[0] === oldPath ? file.path : pair.paths[0],
+        pair.paths[1] === oldPath ? file.path : pair.paths[1]];
+      const files = new Map(pair.files); files.delete(oldPath); files.set(file.path, file);
+      const relations = new Map<string, Relation | undefined>();
+      for (const [path, relation] of pair.relations) {
+        const target = relation?.target;
+        relations.set(path === oldPath ? file.path : path, relation && target?.file === file && target.path === oldPath
+          ? { ...relation, target: { ...target, path: file.path, name: file.basename, mtime: file.stat.mtime } } : relation);
+      }
+      pair.evidence.renamePath(oldPath, file.path);
+      const nextKey = relationshipPairKey(...paths), collision = this.relationshipPairs.get(nextKey);
+      if (collision && collision !== pair) this.relationshipPairBytes -= collision.bytes;
+      this.relationshipPairs.delete(key);
+      this.relationshipPairs.set(nextKey, { ...pair, paths, files, relations, maintenanceRevision: -1,
+        current: /** Remapped read coverage retains no captured pre-rename source authority. */ () => false });
+      this.relationshipPairRevision++; changed = true;
+    }
+    this.onDemandIndexed.delete(oldPath);
+    this.onDemandPresentationPages = new WeakMap();
+    return changed;
+  }
+
   /** Remap one known physical endpoint using the same evidence/search/identity boundary for files and folders. */
   private renameTreeEndpoint(oldPath: string, file: TFile | TFolder): boolean {
     const isFolder = file instanceof TFolder;
@@ -5978,72 +6111,45 @@ export class GraphIndex {
     if (!oldPath || !newPath || oldPath === newPath) return true;
     if (!isFolder) this.refreshRenamedUrlOwner(oldPath, file);
 
-    const retiredHost = this.retireHostEndpoint(oldPath, isFolder ? undefined : file);
+    // Publish only after all retained read owners have followed the native identity.
+    const retiredHost = this.retireHostEndpoint(oldPath, isFolder ? undefined : file, { notify: false, retainMovedReads: true });
 
     const page = this.state.pages.get(oldPath);
-    if (!page || page.isFolder !== isFolder || page.isTag || page.url) return retiredHost;
+    if (!page || page.isFolder !== isFolder || page.isTag || page.url) {
+      const remapped = !isFolder && this.remapPublishedFileReads(oldPath, file);
+      if (remapped) {
+        this.titleCache.delete(oldPath); this.titleCache.delete(newPath);
+        this.nodeVisualCache.delete(oldPath); this.nodeVisualCache.delete(newPath);
+        this.searchCandidateCache.clear(); this.relationViewCache = new WeakMap();
+        this.publicationRevision += 1; this.emit();
+      } else if (retiredHost) this.emitPresentation();
+      return remapped || retiredHost;
+    }
 
     const collision = this.state.pages.get(newPath);
-    if (collision && collision !== page && (collision.file && collision.file !== file
-      || collision.isFolder && !isFolder || collision.isTag || collision.url)) return false;
-
-    const affectedPaths = new Set<string>();
-    for (const targetPath of page.neighbours.keys()) affectedPaths.add(targetPath);
-    for (const item of this.state.evidence.declarationsTouching(oldPath)) {
-      affectedPaths.add(item.declaredByPath);
-      affectedPaths.add(item.declaredTargetPath);
-    }
-    if (collision && collision !== page) {
-      for (const targetPath of collision.neighbours.keys()) affectedPaths.add(targetPath);
-      for (const item of this.state.evidence.declarationsTouching(newPath)) {
-        affectedPaths.add(item.declaredByPath);
-        affectedPaths.add(item.declaredTargetPath);
-      }
+    if (!isFolder && page.file && page.file !== file || collision && collision !== page && (collision.file && collision.file !== file
+      || collision.isFolder && !isFolder || collision.isTag || collision.url)) {
+      if (retiredHost) this.emitPresentation();
+      return false;
     }
 
     const oldSearchEntry = this.searchEntryByPath.get(oldPath);
     const collisionSearchEntry = collision && collision !== page ? this.searchEntryByPath.get(newPath) : undefined;
-
-    for (const path of this.state.evidence.renamePath(oldPath, newPath)) affectedPaths.add(path);
-
-    this.state.pages.delete(oldPath);
+    remapGraphEndpoint(this.state, oldPath, newPath,
+      /** Keep native identity and alias facets, changing only current physical/name coordinates. */ renamed => {
+        renamed.file = isFolder ? null : file; renamed.name = isFolder ? file.name : file.basename;
+        renamed.mtime = isFolder ? null : file.stat.mtime; renamed.url = null;
+        renamed.isFolder = isFolder; renamed.isTag = false;
+        this.preparedPageInfo.delete(renamed);
+      });
     this.state.lowercasePathMap.delete(oldPath.toLowerCase());
-    if (collision && collision !== page) {
-      this.state.pages.delete(newPath);
-      this.state.lowercasePathMap.delete(newPath.toLowerCase());
-    }
-
-    page.path = newPath;
-    page.file = isFolder ? null : file;
-    page.name = isFolder ? file.name : file.basename;
-    page.mtime = isFolder ? null : file.stat.mtime;
-    page.url = null;
-    page.isFolder = isFolder;
-    page.isTag = false;
-    page.neighbours.clear();
-    this.state.pages.set(newPath, page);
     this.state.lowercasePathMap.set(newPath.toLowerCase(), newPath);
-
-    const canonicalAffected = new Set<string>();
-    for (const rawPath of affectedPaths) {
-      const path = rawPath === oldPath ? newPath : rawPath;
-      if (path !== newPath) canonicalAffected.add(path);
-    }
-    for (const targetPath of canonicalAffected) {
-      const target = this.get(targetPath);
-      if (!target || target === page) continue;
-      target.neighbours.delete(oldPath);
-      target.neighbours.delete(newPath);
-      resolveEvidencePair(this.state.pages, this.state.evidence, newPath, target.path);
-      resolveEvidencePair(this.state.pages, this.state.evidence, target.path, newPath);
-    }
+    if (!isFolder) this.remapPublishedFileReads(oldPath, file);
 
     // File-tree ancestry is the only semantic relation that can legitimately change when a rename
     // also moves the file to another folder. Reconcile just that ancestry locally. A basename-only
     // rename simply removes/re-adds the same one folder edge.
-    const treeTouched = this.reconcileFileTreeMembership(file);
-    for (const path of treeTouched) canonicalAffected.add(path);
-    canonicalAffected.add(newPath);
+    this.reconcileFileTreeMembership(file);
 
     const fieldEntry = this.fieldCache.get(oldPath);
     if (fieldEntry) {
@@ -6117,6 +6223,18 @@ export class GraphIndex {
    * repeat against their latest paths rather than starting a second graph or losing a partial move.
    */
   private async renameFolderTree(oldPath: string, folder: TFolder): Promise<void> {
+    // Requested scopes can own a file absent from the main graph. Capture only their affected
+    // endpoints and remap synchronously before the first host yield, including folder-only events.
+    const retainedFiles = new Map<string, TFile>();
+    const readOwners = [...this.semanticScopes.values()].map(/** Requested publications own their finite path map. */ scope => scope.pagesByPath);
+    readOwners.push(...[...this.onDemandCachedScopes.values(), ...this.onDemandHostScopes.values(), ...this.hostPreviewScopes.values(),
+      ...[...this.retainedLocalScopes.values()].map(/** Retained transfers keep the original local owner. */ scope => scope.state)]
+      .map(/** Only already published finite read owners participate. */ state => state.pages));
+    for (const pages of readOwners) for (const [path, page] of pages) {
+      if (path.startsWith(oldPath + "/") && page.file && page.file.path.startsWith(folder.path + "/")
+        && this.app.vault.getFileByPath(page.file.path) === page.file) retainedFiles.set(path, page.file);
+    }
+    for (const [path, file] of retainedFiles) this.renameFile(path, file);
     const oldRoot = this.state.pages.get(`folder:${oldPath}`);
     const newRoot = this.state.pages.get(`folder:${folder.path}`);
     const pending = [oldRoot, newRoot].filter((page): page is GraphPage => Boolean(page))
@@ -6647,7 +6765,7 @@ export class GraphIndex {
       const evidence = this.semanticEvidence(page.path, targetPath).evidence;
       if (!evidence.length) { copy.neighbours.delete(targetPath); continue; }
       const resolved: Relation = { ...emptyRelation<GraphPage>(), target };
-      for (const decision of applyOntologyPrecedence(evidence)) applyEvidenceToRelation(resolved, decision);
+      applyEvidenceDecisionsToRelation(resolved, applyOntologyPrecedence(evidence));
       copy.neighbours.set(targetPath, resolved);
     }
     this.urlProjectionCache.set(page, { epoch: this.relationViewCache,

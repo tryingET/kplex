@@ -1,7 +1,8 @@
 /**
  * Tests K-Plex normalized-source compilation against the preserved migration golden and opaque
  * identity/revision contracts. Host-free transpiled modules and their temporary outputs are owned by the suite.
- * URL work-count probes forward real compiler operations and restore their temporary instrumentation.
+ * Arrow regressions retain neutral property inputs and reciprocal heading-link counts across
+ * collection order. URL work-count probes forward real compiler operations and restore their temporary instrumentation.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -75,6 +76,38 @@ async function compileRecords(records, options = {}) {
 }
 
 const stableSort = (items) => items.map((item) => JSON.stringify(item)).sort();
+
+test("normalized compiler retains explicit arrow ownership across reciprocal heading-link input and batch order", async () => {
+  const source = { id: core.nodeId("star"), kind: "document", state: "materialized", semanticPath: "A-Star.md", physicalPath: "A-Star.md" };
+  const target = { id: core.nodeId("ucs"), kind: "document", state: "materialized", semanticPath: "Uniform Cost Search.md", physicalPath: "Uniform Cost Search.md" };
+  const revision = core.sourceRevision("arrow:1");
+  const valueId = core.referenceValueId("implements:1");
+  const explicit = [
+    { kind: "reference-value", source, sourceRevision: revision, valueId, fieldName: "Implements", normalizedFieldName: "implements", surface: "frontmatter", ordinal: 0, origin: "physical" },
+    { kind: "reference-payload", source, sourceRevision: revision, valueId, index: 0, final: true, text: "[[Uniform Cost Search]]" },
+    { kind: "reference-candidate", source, sourceRevision: revision, valueId, ordinal: 0, final: true,
+      target: { entity: target, rawTarget: "Uniform Cost Search", resolvedBy: "host" }, hostOccurrenceCount: 1 },
+  ];
+  const ordinary = [
+    { kind: "obsidian-link", source, sourceRevision: revision, target: { entity: target, rawTarget: "Uniform Cost Search#Related", resolvedBy: "host" }, occurrenceCount: 2 },
+    { kind: "obsidian-link", source: target, sourceRevision: revision, target: { entity: source, rawTarget: "A-Star#Related", resolvedBy: "host" }, occurrenceCount: 1 },
+  ];
+  const entities = [source, target].map(entity => ({ kind: "entity", source: entity, sourceRevision: revision, entity, name: entity.semanticPath, url: null }));
+  for (const explicitFirst of [true, false]) for (const inferAllLinksAsFriends of [true, false]) {
+    const options = { settings: { ...settings, inferAllLinksAsFriends, hierarchy: { ...settings.hierarchy, leftFriends: ["Implements"] } } };
+    const { compilation } = await compileRecords([...entities, ...(explicitFirst ? [...explicit, ...ordinary] : [...ordinary, ...explicit])], options);
+    assert(compilation);
+    const forward = [...compilation.node(source.id).neighbours.values()].find(relation => relation.target.id === target.id);
+    const reverse = [...compilation.node(target.id).neighbours.values()].find(relation => relation.target.id === source.id);
+    assert.equal(forward.direction, core.LinkDirection.FROM);
+    assert.equal(reverse.direction, core.LinkDirection.TO);
+    assert.equal(forward.isLeftFriend, true);
+    assert.equal(reverse.isLeftFriend, true);
+    assert.equal(forward.leftFriendType, core.RelationType.DEFINED);
+    assert.equal([...compilation.declarations()].filter(item => item.sourceKind === "obsidian-link").length, 2);
+    assert.equal([...compilation.declarations()].filter(item => item.fieldName === "Implements").length, 1);
+  }
+});
 const optional = (key, value) => value === undefined ? {} : { [key]: value };
 
 function cleanRelation(relation) {

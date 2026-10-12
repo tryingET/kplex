@@ -12,6 +12,7 @@
  * keyboard bindings are additive workflow preferences; recorder controls own only transient capture.
  * Sparse per-note Markdown zoom overrides are durable local workflow data, independent of graph imports.
  * Cross-link visibility is shared persisted presentation state for the filter panel and Plex settings.
+ * Remote node imagery requires explicit local opt-in; absent or malformed persisted consent stays off.
  */
 import {
   AbstractInputSuggest,
@@ -283,6 +284,8 @@ export interface KplexSettings {
   nodeImageProperty: string;
   /** How image attachment nodes are rendered. */
   attachmentImageDisplay: AttachmentImageDisplay;
+  /** Explicit permission to contact HTTP(S) hosts when displaying node imagery. Defaults off. */
+  allowRemoteNodeImages: boolean;
   /** Remember the Create Note dialog toggle between invocations. */
   editNewNodeAfterCreate: boolean;
   /** Remember which create button Ctrl/Cmd+Enter should invoke next time. */
@@ -409,6 +412,7 @@ export const DEFAULT_SETTINGS: KplexSettings = {
   thumbnailProperty: "thumbnail",
   nodeImageProperty: "node-image",
   attachmentImageDisplay: "thumbnail-label",
+  allowRemoteNodeImages: false,
   editNewNodeAfterCreate: false,
   newNodeDefaultType: "markdown",
   startupIndexInfoBubbleSeen: false,
@@ -638,6 +642,7 @@ export function migrateAndMergeSettings(raw: unknown): KplexSettings {
     thumbnailProperty: String(old.thumbnailProperty ?? DEFAULT_SETTINGS.thumbnailProperty).trim() || DEFAULT_SETTINGS.thumbnailProperty,
     nodeImageProperty: String(old.nodeImageProperty ?? DEFAULT_SETTINGS.nodeImageProperty).trim() || DEFAULT_SETTINGS.nodeImageProperty,
     attachmentImageDisplay: old.attachmentImageDisplay === "label" || old.attachmentImageDisplay === "image" ? old.attachmentImageDisplay : "thumbnail-label",
+    allowRemoteNodeImages: old.allowRemoteNodeImages === true,
     editNewNodeAfterCreate: Boolean(old.editNewNodeAfterCreate),
     newNodeDefaultType: old.newNodeDefaultType === "excalidraw" ? "excalidraw" : "markdown",
     startupIndexInfoBubbleSeen: Boolean(old.startupIndexInfoBubbleSeen),
@@ -2062,6 +2067,7 @@ export class KplexSettingTab extends PluginSettingTab {
                 type: "group",
                 heading: translate("settings.ui.node.images"),
                 items: [
+                  { name: translate("settings.ui.allowRemoteNodeImages"), desc: translate("settings.ui.allowRemoteNodeImages.help"), control: { type: "toggle", key: "allowRemoteNodeImages" } },
                   { name: translate("settings.ui.thumbnail.property"), desc: translate("settings.ui.image.link.shown.as.a.small.preview.before.the.node.labe"), control: { type: "text", key: "thumbnailProperty" } },
                   { name: translate("settings.ui.node.image.property"), desc: translate("settings.ui.image.link.that.replaces.the.node.label.with.a.compact.v"), control: { type: "text", key: "nodeImageProperty" } },
                   { name: translate("settings.ui.image.attachment.nodes"), desc: translate("settings.ui.how.jpg.png.gif.svg.webp.and.similar.image.attachments.a"), control: { type: "dropdown", key: "attachmentImageDisplay", defaultValue: "thumbnail-label", options: { label: translate("settings.ui.file.name"), "thumbnail-label": translate("settings.ui.thumbnail.file.name"), image: translate("settings.ui.image.only") } } },

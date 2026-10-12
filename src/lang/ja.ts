@@ -2,6 +2,7 @@
  * Japanese translations for all K-Plex-owned user-facing copy.
  *
  * Product names, persisted identifiers and vault content are intentionally not translated here.
+ * Source metadata owns literal reference quoting; tag values include their # prefix.
  */
 import { buildLocaleCatalog, type LocaleTranslationMap } from "./catalog";
 
@@ -277,7 +278,7 @@ const japaneseTranslations = {
   "notice.sidepanelUnavailable": "このワークスペースでは Obsidian のサイドパネルを利用できません。",
   "notice.popoutUnavailable": "このプラットフォームではポップアウトウィンドウを利用できません。",
   "notice.folder": "フォルダー: {name}",
-  "notice.tag": "タグ: #{name}",
+  "notice.tag": "タグ: {name}",
   "notice.openPluginSettings": "設定 → コミュニティプラグイン → K-Plex を開いてください。",
   "notice.selectedNoteNotIndexed": "選択したノートはまだ K-Plex インデックスにありません。",
   "notice.alreadyConnected": "これらのノードはこのゲートを介して既に接続されています。",

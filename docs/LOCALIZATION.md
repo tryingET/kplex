@@ -6,6 +6,20 @@ Formatting is strict: unknown keys, blank/malformed entries, undeclared or missi
 
 Obsidian language detection belongs at the host boundary. `src/adapters/obsidian/localization.ts` calls Obsidian's typed `getLanguage()` export and creates the translator. Portable feature code receives a `Translator` capability; it does not read `window.app`, browser storage or Obsidian APIs to determine language.
 
+Interpolated English entries declare `referenceParams`: a subset of `params` identifying literal
+content references such as note names, paths and property names. An empty array explicitly leaves
+counts, shortcuts and descriptive labels unquoted. Classification belongs to the source entry,
+not to parameter-name heuristics: `source` can identify a note in one message and a descriptive
+evidence kind in another. Bundled and injected locale entries inherit that classification; a
+locale cannot override it or mark a plural count as a reference.
+
+The shared formatter adds ASCII double quotes around marked values and removes existing paired
+template wrappers directly around those placeholders, including localized quotation marks.
+Interpolation happens once. Quotes, backslashes and placeholder-looking text inside a raw value
+remain user data; neither formatting nor caller-side display preparation changes stored note or
+property values. Callers supply complete references, such as `#tag`, without adding their own
+quote wrappers. Standalone graph labels and native picker values keep their existing presentation.
+
 Shortcut presentation is separate from translated copy. `src/core/plex/shortcutPresentation.ts` owns logical shortcut specs and pure environment-aware formatting based on E00's `PresentationEnvironment`. For modifier shortcuts, the formatter shows `Command`/`Option` for macOS/iOS and `Control`/`Alt` for Windows/Android; it omits a modifier hint when the convention is unknown. It emits no hint when the action is unavailable or keyboard presence is false or unknown. This is intentional: Obsidian mobile reports hardware-keyboard presence as unknown, so K-Plex must not invent attached-keyboard detection.
 
 The representative L00 search hint uses the existing local search handler. That handler still accepts `F4` or Ctrl/Meta+F; the displayed catalog parameter uses `F4`, which focused K-Plex search in the real desktop host check. A synthetic Command+F event was accepted by K-Plex but did not leave the field focused after Obsidian's event handling, so the UI does not advertise it. `aria-keyshortcuts` tokens elsewhere remain machine-readable standard syntax and are not localized. Host-configurable bindings must not be advertised as fixed shortcuts unless a future host adapter can provide the effective binding.

@@ -1,21 +1,26 @@
 /**
  * Actual Connection-details/native-confirmation components in real Chromium. A narrow Modal/Setting
- * shell and mutation port isolate generation/UI lifetime; real writer/IndexedDB and native H11 lanes
+ * shell and mutation port isolate generation/UI lifetime and live directional Hidden source choice;
+ * real writer/IndexedDB and native H11 lanes
  * separately establish persistence, canonical publication and Sidecar behavior.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
 import { browserBundle, chromiumHarness } from "./support/browserTypeScript.mjs";
+import { contributorBrowserBundle, contributorBrowserInitialize } from "./support/contributorBrowserFixture.mjs";
+import { hostOracle, collect } from "./support/cachedSourceFixture.mjs";
+import { fullCenterIndex, centerGateSettings } from "./support/requestedCenterGateFixture.mjs";
 
 const host = `
 function make(parent,tag,options={}){const el=document.createElement(tag);if(options.cls)el.className=options.cls;if(options.text)el.textContent=options.text;for(const[k,v]of Object.entries(options.attr??{}))el.setAttribute(k,v);parent.append(el);return el;}
 for(const [name,callback]of Object.entries({empty(){this.replaceChildren()},setText(text){this.textContent=text},addClass(...names){this.classList.add(...names)},createEl(tag,options){return make(this,tag,options)},createDiv(options){return make(this,'div',options)},createSpan(options){return make(this,'span',options)}}))HTMLElement.prototype[name]=callback;
 exports.Modal=class Modal{constructor(app){this.app=app;this.modalEl=make(document.createElement('div'),'div');this.titleEl=make(this.modalEl,'h2');this.contentEl=make(this.modalEl,'div');}open(){document.body.append(this.modalEl);this.onOpen?.()}close(){this.onClose?.();this.modalEl.remove()}};
-exports.Setting=class Setting{constructor(parent){this.parent=make(parent,'div',{cls:'setting-item'})}addButton(callback){const el=make(this.parent,'button');callback({buttonEl:el,setButtonText(text){el.textContent=text;return this},setDestructive(){el.classList.add('mod-warning');return this},onClick(fn){el.addEventListener('click',fn);return this}});return this}};
+exports.Setting=class Setting{constructor(parent){this.parent=this.settingEl=make(parent,'div',{cls:'setting-item'})}addButton(callback){const el=make(this.parent,'button');callback({buttonEl:el,setButtonText(text){el.textContent=text;return this},setDestructive(){el.classList.add('mod-warning');return this},setCta(){el.classList.add('mod-cta');return this},onClick(fn){el.addEventListener('click',fn);return this}});return this}setName(text){make(this.parent,'strong',{text});return this}setDesc(text){let el=this.parent.querySelector('.setting-item-description');if(!el)el=make(this.parent,'div',{cls:'setting-item-description'});el.textContent=text;return this}addDropdown(callback){const selectEl=make(this.parent,'select');callback({selectEl,addOption(value,label){const option=make(selectEl,'option',{text:label});option.value=value;return this},setValue(value){selectEl.value=value;return this},onChange(fn){selectEl.addEventListener('change',()=>fn(selectEl.value));return this}});return this}addToggle(callback){const toggleEl=make(this.parent,'input');toggleEl.type='checkbox';callback({toggleEl,setValue(value){toggleEl.checked=value;return this},onChange(fn){toggleEl.addEventListener('change',()=>fn(toggleEl.checked));return this}});return this}};
+exports.getLanguage=()=> 'en';
 exports.setIcon=(el,icon)=>el.dataset.icon=icon;
 exports.Notice=class Notice{constructor(text){window.notices.push(text)}};
 `;
-const bundle = await browserBundle(["src/ui/RelationshipExplanationModal.ts", "src/application/frontmatterUnlink.ts", "src/lang/index.ts",
+const bundle = await browserBundle(["src/ui/DeleteNodeModal.ts", "src/ui/RelationshipExplanationModal.ts", "src/application/frontmatterUnlink.ts", "src/lang/index.ts",
  "src/adapters/obsidian/relationshipMetadataWrite.ts"], { obsidian: host });
 const setup = `(()=>{
  const M=window.sourceModules;window.notices=[];window.ok=(value,message)=>{if(!value)throw new Error(message)};
@@ -114,3 +119,68 @@ for (const mode of ["failure", "pending-noticed", "pending-unnoticed", "closed-a
   }finally{await browser.cleanup();}
  });
 }
+
+/** The actual native deletion shell renders safe defaults, finite broader consent and exact property navigation. */
+test('delete consent modal keeps arbitrary defaults and cancellation cannot revive detached controls',async()=>{
+ const browser=await chromiumHarness(bundle);try{
+  assert.equal(await browser.evaluate(setup),true);
+  assert.equal(await browser.evaluate(`(()=>{const calls=[],opened=[],preview={sources:[{path:'A.md',properties:[{field:'Children',ontology:true,choice:'remove',supported:true,line:1},{field:'Notes',ontology:false,choice:'keep',supported:true,line:2}]}],hiddenFields:['hidden','Private'],hiddenField:'hidden'};
+   const modal=new sourceModules.DeleteNodeConfirmationModal({}, {nodeName:'B',hasFile:true,firstUse:false,confirmFileDelete:false,preview,onConfirm:value=>calls.push(value),onOpenLocation:value=>opened.push(value),onCancel:()=>calls.push('cancel')});modal.open();
+   ok(modal.modalEl.textContent.includes('Other references may exist')&&modal.modalEl.textContent.includes('Markdown links'),'Coverage and body preservation disclosed');
+   const rows=[...modal.modalEl.querySelectorAll('[data-kplex-delete-field]')];ok(rows[0].dataset.kplexDeleteSource==='A.md'&&rows[0].querySelector('select').value==='remove'&&rows[1].querySelector('select').value==='keep','Exact coordinate defaults');
+   const select=rows[1].querySelector('select');select.value='hide';select.dispatchEvent(new Event('change'));ok(preview.sources[0].properties[1].choice==='hide','One selected broader property only');rows[1].querySelector('button').click();ok(opened[0].path==='A.md'&&opened[0].line===2&&opened[0].fieldName==='Notes','Real source coordinate');
+   const confirm=modal.modalEl.querySelector('[data-kplex-delete-confirm]');modal.close();confirm.click();ok(calls.length===1&&calls[0]==='cancel','Detached approval cannot revive canceled consent');return true})()`),true);
+ }finally{await browser.cleanup();}
+});
+
+/** Explicit approval settles exactly once and retains the native physical-confirm preference independently. */
+test('delete modal explicit consent is one-shot and no hidden configuration offers no Hide choice',async()=>{
+ const browser=await chromiumHarness(bundle);try{
+  assert.equal(await browser.evaluate(setup),true);
+  assert.equal(await browser.evaluate(`(()=>{const calls=[],preview={sources:[{path:'A.md',properties:[{field:'Notes',ontology:false,choice:'keep',supported:true,line:2}]}],hiddenFields:[],hiddenField:''};const modal=new sourceModules.DeleteNodeConfirmationModal({}, {nodeName:'B',hasFile:true,firstUse:false,confirmFileDelete:true,preview,onConfirm:value=>calls.push(value)});modal.open();
+   const select=modal.modalEl.querySelector('[data-kplex-delete-choice]');ok(![...select.options].some(o=>o.value==='hide')&&modal.modalEl.textContent.includes('Configure a Hidden'),'Unavailable Hidden not invented');
+   const toggle=modal.modalEl.querySelector('input[type=checkbox]');toggle.checked=true;toggle.dispatchEvent(new Event('change'));const confirm=modal.modalEl.querySelector('[data-kplex-delete-confirm]');confirm.click();confirm.click();ok(calls.length===1&&calls[0]===false,'Physical preference and one-shot scope retained');return true})()`),true);
+ }finally{await browser.cleanup();}
+});
+
+/** Live Hidden direction follows the selected owner; detached changes cannot revive or retarget one-shot approval. */
+test('Hidden native shell updates exact central direction with source selection and retires stale controls',async()=>{
+ const browser=await chromiumHarness(bundle);try{
+  assert.equal(await browser.evaluate(setup),true);
+  assert.equal(await browser.evaluate(`(()=>{const calls=[];const modal=new sourceModules.HideRelationshipModal({},['Folder/A.md','Folder/B.md'],['hidden','Private'],['Folder/A.md','Folder/B.md'],value=>calls.push(value));modal.open();ok(modal.modalEl.textContent.includes('Original property links')&&modal.modalEl.textContent.includes('may still be visible from the other note'),'Retention and inverse visibility disclosed');
+   const direction=modal.modalEl.querySelector('[data-kplex-hide-direction]'),source=modal.modalEl.querySelector('[data-kplex-hide-source]'),field=modal.modalEl.querySelector('[data-kplex-hidden-field]');ok(direction.getAttribute('aria-live')==='polite','Source-selection consequences announce politely');ok(direction.dataset.kplexHideFrom==='Folder/A.md'&&direction.dataset.kplexHideTo==='Folder/B.md'&&direction.textContent==='Hide "Folder/B.md" when "Folder/A.md" is the central note. Save the Hidden relationship in "Folder/A.md".','Exact initial central and write note');
+   source.value='Folder/B.md';source.dispatchEvent(new Event('change'));ok(direction.dataset.kplexHideFrom==='Folder/B.md'&&direction.dataset.kplexHideTo==='Folder/A.md'&&direction.textContent==='Hide "Folder/A.md" when "Folder/B.md" is the central note. Save the Hidden relationship in "Folder/B.md".','Selected source updates direction before approval');
+   field.value='Private';field.dispatchEvent(new Event('change'));const confirm=modal.modalEl.querySelector('[data-kplex-hide-confirm]');confirm.click();source.value='Folder/A.md';source.dispatchEvent(new Event('change'));confirm.click();ok(calls.length===1&&calls[0].sourcePath==='Folder/B.md'&&calls[0].field==='Private'&&direction.dataset.kplexHideFrom==='Folder/B.md','Detached approved controls cannot change exact once-only scope');
+   const cancel=new sourceModules.HideRelationshipModal({},['A.md','B.md'],['hidden','Private'],['A.md','B.md'],value=>calls.push(value));cancel.open();const stale=cancel.modalEl.querySelector('[data-kplex-hide-confirm]'),staleSource=cancel.modalEl.querySelector('[data-kplex-hide-source]'),staleField=cancel.modalEl.querySelector('[data-kplex-hidden-field]'),staleDirection=cancel.modalEl.querySelector('[data-kplex-hide-direction]');cancel.close();staleSource.value='B.md';staleSource.dispatchEvent(new Event('change'));staleField.value='Private';staleField.dispatchEvent(new Event('change'));stale.click();ok(calls.length===2&&calls[1]===null&&staleDirection.dataset.kplexHideFrom==='A.md','Canceled hidden shell cannot revive or update detached direction');return true})()`),true);
+ }finally{await browser.cleanup();}
+});
+
+/** The original target can be the sole writable source; the explicit pair prevents a false self-direction. */
+test('Hidden native shell names the opposite placeholder when only the original target is writable',async()=>{
+ const browser=await chromiumHarness(bundle);try{
+  assert.equal(await browser.evaluate(setup),true);
+  assert.equal(await browser.evaluate(`(()=>{const calls=[],modal=new sourceModules.HideRelationshipModal({},['Folder/B.md'],['Private'],['Missing/B','Folder/B.md'],value=>calls.push(value));modal.open();const direction=modal.modalEl.querySelector('[data-kplex-hide-direction]'),source=modal.modalEl.querySelector('[data-kplex-hide-source]');ok(source.options.length===1&&source.value==='Folder/B.md','Only the captured writable endpoint is offered');ok(direction.dataset.kplexHideFrom==='Folder/B.md'&&direction.dataset.kplexHideTo==='Missing/B'&&direction.textContent==='Hide "Missing/B" when "Folder/B.md" is the central note. Save the Hidden relationship in "Folder/B.md".','Both explicit endpoint paths survive opposite-source-only choice');modal.modalEl.querySelector('[data-kplex-hide-confirm]').click();ok(calls.length===1&&calls[0].sourcePath==='Folder/B.md'&&calls[0].field==='Private','Sole writable source grants its exact one-note consent');return true})()`),true);
+ }finally{await browser.cleanup();}
+});
+
+/** Real pair facades must follow canonical dematerialization before another exact native write scope. */
+test('canonical dematerialization retires the copied physical pair facade and prepares the ghost pair',async()=>{
+ const graphBundle=await contributorBrowserBundle(['src/index/GraphIndex.ts','src/index/GraphBuilder.ts','src/core/graph/compiler.ts','src/adapters/obsidian/metadataSourceCollector.ts','src/adapters/obsidian/ontologySourceCollector.ts']);
+ const browser=await chromiumHarness(graphBundle);
+ try{assert.equal(await browser.evaluate(contributorBrowserInitialize),true);
+  assert.equal(await browser.evaluate('(async()=>{'+
+   'const assert=Object.assign((v,m)=>ok(v,m),{equal}),M=sourceModules,f=await fixture("delete-pair-facade"),collect='+collect.toString()+',hostOracle='+hostOracle.toString()+',fullCenterIndex='+fullCenterIndex.toString()+',centerGateSettings='+centerGateSettings.toString()+';'+
+   'let index;try{'+
+   'f.text=f.texts;const owner=f.add("Owner.md","",{Parent:"[[Target.md]]",arbitrary:"[[Target.md]]"}),native=f.add("Target.md","");await f.acquire();ok(await f.acquisition.reconcile(),"Seed real source authority");'+
+   'const semantic={hierarchy:{hidden:[],parents:["Parent"],children:[],leftFriends:[],rightFriends:[],previous:[],next:[]},inferAllLinksAsFriends:false,inverseInfer:false,showFullTagName:true,tagStyleList:[],maxLabelLength:30};'+
+   'index=await fullCenterIndex(M,f,await hostOracle(f,[...f.files.keys()],semantic,{noteTypeField:"Type",primaryTagField:"Style"},true),semantic,centerGateSettings({showFolderNodes:false}));index.scheduleOrphanCleanup=()=>{};'+
+   'ok(await index.sourceAcquisition.reconcile(),"Acquire actual index source authority");ok(await index.prepareRelationshipPair(owner.path,native.path),"Prepare physical pair");'+
+   'const canonical=index.pages.get(native.path),facade=index.get(native.path);ok(facade!==canonical,"Pair exposes copied facade");ok(facade.file===native&&canonical.file===native,"Both exact native identities before trash");'+
+   'f.files.delete(native.path);f.app.vault.trigger("delete",native);index.dematerializeFile(native.path);'+
+   'ok(index.pages.get(native.path)===canonical,"Canonical endpoint identity retained");equal(canonical.file,null,"Canonical ghost immediately");equal(index.get(native.path).file,null,"Read facade cannot retain deleted physical file");'+
+   'ok(await index.sourceAcquisition.reconcile(),"Settle actual deletion source authority");ok(await index.prepareRelationshipPair(owner.path,native.path),"Prepare actual remaining ghost pair");'+
+   'ok(index.pages.get(native.path)===canonical,"Pair publication preserves canonical ghost identity");equal(index.get(native.path).file,null,"Published ghost facade remains unbound");equal(f.app.vault.getFileByPath(native.path),null,"No replacement native target");'+
+   'ok(index.isSemanticWriteReady(owner.path,native.path),"Ordinary pair write authority stays required and available");return true;'+
+   '}finally{index?.destroy();f.close();}})()'),true);
+ }finally{await browser.cleanup();}
+});

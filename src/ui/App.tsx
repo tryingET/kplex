@@ -4,6 +4,7 @@
  * explicit navigation origins and native input pause it without replacing history, editor or Zen owners.
  * The root leases one shared delayed-hover/long-press tooltip owner for its rendering document.
  * Cross-link visibility reads shared persisted settings rather than temporary quick-filter or Find snapshots.
+ * Action-dispatched sync/Sidecar menus resolve fresh surface-local control anchors without routing DOM events through the action manager.
  * Native follow retains the latest canonical file while hidden and suppresses fallback scenes/motion during partial hydration.
  */
 import {
@@ -38,6 +39,7 @@ import { physicalPositionLabel } from "./features/positionPresentation";
 import { effectiveActionBindings } from "../core/plex/actionPreferences";
 import { formatActionBinding } from "./actionPresentation";
 import { surfaceAction } from "./surfaceActionImplementation";
+import { toolbarMenuAnchor } from "./menuAnchor";
 import type { DocumentSyncMode, KplexViewSurface, NodeSortOrder, SidecarMarkdownMode, SidecarPosition } from "../settings";
 import { SearchBox } from "./features/SearchBox";
 import { createLegacyGraphSearchRead } from "../adapters/obsidian/graphContracts";
@@ -184,6 +186,8 @@ export function KplexApp({ plugin, surface, hostLeaf, translate, environment, on
   const canvasNameId = useId();
   const displayState = useSyncExternalStore(displayModes.subscribe, displayModes.getSnapshot);
   const rootRef = useRef<HTMLDivElement>(null);
+  const syncMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const sidecarMoveButtonRef = useRef<HTMLButtonElement>(null);
   const graphActionPorts = useRef<GraphActionPorts | null>(null);
   useEffect(/** Camera preparation must precede native overlay movement and React toolbar visibility changes. */ () => displayModes.onBeforeResize(/** Prepare only the currently mounted graph generation. */ () => graphActionPorts.current?.prepareDisplayResize?.()), [displayModes]);
   const [wander] = useState(/** One controller owns this view generation; all graph capabilities are read live. */ () => new WanderController({
@@ -688,7 +692,14 @@ export function KplexApp({ plugin, surface, hostLeaf, translate, environment, on
     forceRender((value) => value + 1);
   };
 
-  const showDocumentSyncMenu = (event?: MouseEvent<HTMLButtonElement>) => {
+  /** Resolve this surface's live control after action dispatch; native Menu retains document/clamping/dismissal ownership. */
+  const showToolbarMenu = (menu: Menu, control: RefObject<HTMLButtonElement | null>): void => {
+    const anchor = toolbarMenuAnchor(rootRef.current, control.current);
+    if (anchor) plugin.showKplexMenuAtPosition(menu, anchor.position, anchor.ownerDocument, hostLeaf);
+  };
+
+  /** Open existing sync choices at the owning button for pointer, keyboard and palette invocation. */
+  const showDocumentSyncMenu = () => {
     const menu = new Menu();
     const current = plugin.getDocumentSyncMode();
 
@@ -725,12 +736,7 @@ export function KplexApp({ plugin, surface, hostLeaf, translate, environment, on
       .setIcon("scan-eye")
       .setDisabled(!plugin.hasDocumentSyncTarget())
       .onClick(() => void plugin.showLinkedDocumentLeaf()));
-    if (event) plugin.showKplexMenuAtMouseEvent(menu, event.nativeEvent, hostLeaf);
-    else {
-      const root = rootRef.current;
-      const bounds = root?.getBoundingClientRect();
-      if (root && bounds) plugin.showKplexMenuAtPosition(menu, { x: bounds.left + 40, y: bounds.top + 40 }, root.ownerDocument, hostLeaf);
-    }
+    showToolbarMenu(menu, syncMenuButtonRef);
   };
 
   const toggleExpandedView = async () => {
@@ -1025,7 +1031,8 @@ export function KplexApp({ plugin, surface, hostLeaf, translate, environment, on
 
 
 
-  const showSidecarMoveMenu = (event?: MouseEvent<HTMLButtonElement>) => {
+  /** The action-dispatched Sidecar menu shares fresh control anchoring without changing position choices. */
+  const showSidecarMoveMenu = () => {
     const menu = new Menu();
     const options: Array<[SidecarPosition, string, string]> = [
       ["right", translate("position.right"), "panel-right"], ["left", translate("position.left"), "panel-left"], ["above", translate("position.above"), "panel-top"], ["below", translate("position.below"), "panel-bottom"],
@@ -1033,12 +1040,7 @@ export function KplexApp({ plugin, surface, hostLeaf, translate, environment, on
     for (const [position, label, icon] of options) menu.addItem((item) => item
       .setTitle(label).setIcon(icon).setChecked((sidecarPosition ?? plugin.settings.sidecarPosition) === position)
       .onClick(/** Position choices dispatch the same typed intent as a configured shortcut. */ () => actions.dispatch({ id: "view.sidecar.position", source: "context-menu", args: { position } })));
-    if (event) plugin.showKplexMenuAtMouseEvent(menu, event.nativeEvent, hostLeaf);
-    else {
-      const root = rootRef.current;
-      const bounds = root?.getBoundingClientRect();
-      if (root && bounds) plugin.showKplexMenuAtPosition(menu, { x: bounds.left + 40, y: bounds.top + 40 }, root.ownerDocument, hostLeaf);
-    }
+    showToolbarMenu(menu, sidecarMoveButtonRef);
   };
 
   void sidecarRevision; // subscription is a render trigger; all state is owned by the plugin.
@@ -1144,6 +1146,10 @@ export function KplexApp({ plugin, surface, hostLeaf, translate, environment, on
           <div className="kplex-top-actions is-compact">
             {supportButton}
             <button
+              ref={syncMenuButtonRef}
+              type="button"
+              aria-haspopup="menu"
+              data-kplex-menu-trigger="sync"
               className={`kplex-icon-button${syncMode !== "off" && syncTargetAvailable ? " is-on" : ""}`}
               aria-label={translate("app.syncActions", { status: syncTitle })}
               onClick={() => runAction("view.sync.choose")}
@@ -1194,7 +1200,7 @@ export function KplexApp({ plugin, surface, hostLeaf, translate, environment, on
         <button type="button" className="kplex-sidecar-primary" aria-pressed={sidecarOpen} aria-label={sidecarOpen ? translate("app.closeSidecar") : translate("app.openSidecarAt", { position: physicalPositionLabel(sidecarEdgePosition, translate) })} onClick={() => runAction("view.sidecar.toggle")}><ObsidianIcon name={sidecarOpen ? closeSidecarIcon : openSidecarIcon} size={16} /></button>
         {sidecarOpen && <>
           <button aria-label={translate("app.foldForSidecar")} onClick={() => runAction("view.sidecar.collapse-plex")}><ObsidianIcon name={foldPlexIcon} size={15} /></button>
-          <button aria-label={translate("app.moveSidecar")} onClick={() => runAction("view.sidecar.position")}><ObsidianIcon name="move" size={15} /></button>
+          <button ref={sidecarMoveButtonRef} type="button" aria-haspopup="menu" data-kplex-menu-trigger="sidecar-position" aria-label={translate("app.moveSidecar")} onClick={() => runAction("view.sidecar.position")}><ObsidianIcon name="move" size={15} /></button>
           <button aria-label={translate("app.detachSidecar")} onClick={() => runAction("view.sidecar.detach")}><ObsidianIcon name="unlink" size={15} /></button>
         </>}
       </div>}

@@ -4,8 +4,41 @@
  * Keys describe the product surface rather than the current English wording so they can remain
  * stable when copy is refined. `context` is translator-facing guidance. Named `params` must match
  * every `{placeholder}` used by the message. Do not put vault/user data into keys.
+ * Hidden consent names the selected central/write note and discloses retained inverse visibility.
+ * `referenceParams` explicitly marks literal content references; descriptive labels and numeric
+ * parameters remain unquoted regardless of their names. Locale catalogs inherit this classification.
  */
 export const englishCatalog = {
+  "graph.evidenceFieldDecision": {message:"{field} — {resolution}",context:"Actual ontology field reference in a connector evidence hint; source-kind labels use separate descriptive keys.",params:["field","resolution"],referenceParams:["field"]},
+  "graph.evidenceFieldDecisionOverridden": {message:"{field} — {resolution} · overridden",context:"Actual overridden ontology field reference in a connector evidence hint.",params:["field","resolution"],referenceParams:["field"]},
+  "delete.cleanup.inspectFailed": {message:"Could not inspect the current source: {path}. Earlier saved changes are kept; review this note manually.",context:"Inspection failure after possible committed deletion/source writes.",params:["path"], referenceParams: ["path"]},
+  "delete.cleanup.dontAskAgainHelp": {message:"Skip the file-trash confirmation. Changes to other properties still require confirmation. You can restore file confirmations in K-Plex settings.",context:"Legacy physical-delete preference does not grant broader property consent.",params:[]},
+  "delete.cleanup.bodyChanged": {message: "Source content changed: {path}. Review its links manually.",context: "Retired exact pre-trash navigation coordinates.",params: ["path"], referenceParams: ["path"]},
+  "delete.cleanup.reviewSource": {message:"Review source",context:"Navigation-only recovery after source body changed.",params:[]},
+  "hide.confirmPair": {message: "Hide \"{target}\" when \"{source}\" is the central note. Save the Hidden relationship in \"{source}\".",context: "Directional Hidden consent names the selected writable source and the opposite exact endpoint; it updates when the source changes.",params: ["source","target"], referenceParams: ["source","target"]},
+  "delete.cleanup.previewTooLarge": {message: "Too many references to review safely. No files were changed. Review the sources manually.",context: "Bounded pre-trash preview refusal.",params: []},
+  "delete.cleanup.noteConfirm": { message: "Delete {name}? Obsidian will move the file to trash. Only the selected property references will change.", context: "Scoped deletion and additive Hidden relationship consent.", params: ["name"], referenceParams: ["name"] },
+  "delete.cleanup.placeholderConfirm": { message: "Remove references to {name}? Only the selected properties will change.", context: "Scoped deletion and additive Hidden relationship consent.", params: ["name"], referenceParams: ["name"] },
+  "delete.cleanup.coverage": { message: "These are currently indexed sources. Other references may exist. Markdown links and inline relationships are kept for manual review.", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "delete.cleanup.ontology": { message: "Configured relationship property. Remove references by default.", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "delete.cleanup.otherProperty": { message: "Other property. Keep references unless you choose and confirm a change.", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "delete.cleanup.keep": { message: "Keep", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "delete.cleanup.remove": { message: "Remove references", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "delete.cleanup.unsupported": { message: "This value needs manual editing. Keep it or hide the connection.", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "delete.cleanup.remainingHelp": { message: "Review remaining references to {name}. Preserved links can keep the placeholder in the graph.", context: "Scoped deletion and additive Hidden relationship consent.", params: ["name"], referenceParams: ["name"] },
+  "delete.cleanup.property": { message: "Property: {field}", context: "Scoped deletion and additive Hidden relationship consent.", params: ["field"], referenceParams: ["field"] },
+  "delete.cleanup.sourceFailed": { message: "Source not changed: {path}. Review it manually.", context: "Scoped deletion and additive Hidden relationship consent.", params: ["path"], referenceParams: ["path"] },
+  "delete.cleanup.sourcePending": { message: "Source saved; graph update pending: {path}.", context: "Scoped deletion and additive Hidden relationship consent.", params: ["path"], referenceParams: ["path"] },
+  "delete.cleanup.targetChanged": { message: "The deleted target changed. Remaining sources were left untouched.", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "hide.title": { message: "Hide connection", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "hide.choice": { message: "Keep links and hide connection", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "hide.confirm": { message: "Hide the connection to \"{target}\"? Add a Hidden relationship in the selected note.", context: "Scoped deletion and additive Hidden relationship consent.", params: ["target"], referenceParams: ["target"] },
+  "hide.retainsSources": { message: "Original property links, Markdown links and inline relationships are kept. Hiding is directional. It applies from note \"A\" to \"B\" when \"A\" is in the center. The connection may still be visible from the other note.", context: "Shared directional Hidden disclosure for deletion and connection consent; no inverse hide or source removal is promised.", params: [] },
+  "hide.source": { message: "Save in note", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "hide.field": { message: "Hidden property", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "hide.noField": { message: "Configure a Hidden property in K-Plex settings to hide connections.", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "actions.relationship.hide": { message: "Hide connection", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
+  "actions.relationship.hide.description": { message: "Keep source links and add a confirmed Hidden relationship.", context: "Scoped deletion and additive Hidden relationship consent.", params: [] },
   "actions.canvasSettings": { message: "K-Plex settings", context: "Bare-canvas native context menu entry opening the existing plugin settings.", params: [] },
   "actions.canvasZen": { message: "Zen mode", context: "Checked view-local canvas context menu toggle.", params: [] },
   "actions.canvasFullscreen": { message: "Full-screen mode", context: "Checked desktop-only canvas context menu toggle.", params: [] },
@@ -23,7 +56,7 @@ export const englishCatalog = {
   "wander.unavailable": { message: "Wandering paused while the Plex is unavailable. Select Play to retry.", context: "Local scene readiness failure status.", params: [] },
   "wander.speed": { message: "Seconds per move", context: "Accessible whole-cycle slider label.", params: [] },
   "wander.interval": { message: "Interval", context: "Compact caption on the shared Plex pace rail.", params: [] },
-  "wander.pace": { message: "{seconds} s / move", context: "Whole-cycle pace shown next to slider.", params: ["seconds"] },
+  "wander.pace": { message: "{seconds} s / move", context: "Whole-cycle pace shown next to slider.", params: ["seconds"], referenceParams: [] },
 
   "support.reportTitle": { message: "Report a bug", context: "Native support-report dialog and toolbar action.", params: [] },
   "support.searchFirst": { message: "Search existing issues first to see whether this problem has already been reported.", context: "First instruction in the support-report flow.", params: [] },
@@ -55,26 +88,26 @@ export const englishCatalog = {
   "actions.globalAssignmentUnknown": { message: "Global shortcut not checked", context: "Host assignment absence is not trustworthy or observable.", params: [] },
   "actions.globalAssignmentAbsent": { message: "No global shortcut", context: "A fully observed effective native assignment is empty.", params: [] },
   "actions.globalAssignmentPresent": { message: "Shortcut assigned in Obsidian", context: "Positive host assignment, including native-only or partially formattable keys.", params: [] },
-  "actions.globalAssignmentChords": { message: "Global shortcut: {bindings}", context: "Complete safely formattable effective Obsidian assignment.", params: ["bindings"] },
+  "actions.globalAssignmentChords": { message: "Global shortcut: {bindings}", context: "Complete safely formattable effective Obsidian assignment.", params: ["bindings"], referenceParams: [] },
   "actions.savedAssignmentUnavailable": { message: "Saved shortcut retained; command unavailable.", context: "An unpublished command retains its separately saved Obsidian hotkey.", params: [] },
   "actions.fixedProtocol": { message: "Fixed keys while the relationship composer is open.", context: "Composer session protocols cannot be configured as graph shortcuts.", params: [] },
   "actions.searchByHotkey": { message: "Search by hotkey", context: "Keyboard icon beside native action search.", params: [] },
   "actions.filter.assigned": { message: "Assigned", context: "Native shortcut filter pill.", params: [] },
   "actions.filter.custom": { message: "Assigned by me", context: "Native shortcut filter pill for explicitly customized local bindings.", params: [] },
-  "actions.filter.conflictCount": { message: "Conflicts ({count})", context: "Native shortcut filter; count is actions with local conflicts or advisory global overlaps.", params: ["count"] },
-  "actions.bindingDiagnostic": { message: "{binding}: {message}", context: "Visible per-shortcut conflict or assignment information beneath an action setting.", params: ["binding", "message"] },
-  "actions.localConflict": { message: "K-Plex shortcut conflict: {actions}.", context: "Persistent chip tooltip for definite same-context local collisions.", params: ["actions"] },
-  "actions.localLayoutOverlap": { message: "Possible keyboard-layout overlap with K-Plex: {actions}.", context: "Persistent chip tooltip for canonical possible physical/logical overlap.", params: ["actions"] },
-  "actions.globalOverlap": { message: "Also assigned in Obsidian: {commands}. Local shortcuts can still be saved.", context: "Advisory native command assignment; it never blocks local preferences.", params: ["commands"] },
-  "actions.globalLayoutOverlap": { message: "Possible keyboard-layout overlap with Obsidian: {commands}. Local shortcuts can still be saved.", context: "Conservative advisory for a physical local key and logical native assignment.", params: ["commands"] },
-  "actions.globalSelfAssignment": { message: "This K-Plex command is also assigned in Obsidian: {commands}.", context: "Informational same-action publication, excluded from conflicts count.", params: ["commands"] },
+  "actions.filter.conflictCount": { message: "Conflicts ({count})", context: "Native shortcut filter; count is actions with local conflicts or advisory global overlaps.", params: ["count"], referenceParams: [] },
+  "actions.bindingDiagnostic": { message: "{binding}: {message}", context: "Visible per-shortcut conflict or assignment information beneath an action setting.", params: ["binding", "message"], referenceParams: [] },
+  "actions.localConflict": { message: "K-Plex shortcut conflict: {actions}.", context: "Persistent chip tooltip for definite same-context local collisions.", params: ["actions"], referenceParams: [] },
+  "actions.localLayoutOverlap": { message: "Possible keyboard-layout overlap with K-Plex: {actions}.", context: "Persistent chip tooltip for canonical possible physical/logical overlap.", params: ["actions"], referenceParams: [] },
+  "actions.globalOverlap": { message: "Also assigned in Obsidian: {commands}. Local shortcuts can still be saved.", context: "Advisory native command assignment; it never blocks local preferences.", params: ["commands"], referenceParams: [] },
+  "actions.globalLayoutOverlap": { message: "Possible keyboard-layout overlap with Obsidian: {commands}. Local shortcuts can still be saved.", context: "Conservative advisory for a physical local key and logical native assignment.", params: ["commands"], referenceParams: [] },
+  "actions.globalSelfAssignment": { message: "This K-Plex command is also assigned in Obsidian: {commands}.", context: "Informational same-action publication, excluded from conflicts count.", params: ["commands"], referenceParams: [] },
   "actions.globalHotkeysUnavailable": { message: "Obsidian hotkey assignments are unavailable in this version.", context: "Feature-detected host information unavailable; does not imply no global overlaps.", params: [] },
   "actions.globalHotkeysPartial": { message: "Some Obsidian hotkey assignments could not be checked.", context: "Bounded or malformed native assignment snapshot has incomplete advisory information.", params: [] },
   "actions.filter.unassigned": { message: "Unassigned", context: "Native shortcut filter pill.", params: [] },
-  "actions.connectHintNoSearch": { message: "Select a target with arrows. {submit} connects; {cancel} cancels.", context: "Visible graph connection mode when search shortcut is disabled.", params: ["submit", "cancel"] },
-  "actions.connectFrom": { message: "Connect from {origin}", context: "Announce the captured visible-connection origin.", params: ["origin"] },
-  "actions.migrationSkipped": { message: "New default shortcuts were omitted to preserve your saved choices: {actions}.", context: "Explain migrated local shortcut collisions.", params: ["actions"] },
-  "actions.migrationIssues": { message: "{count} saved shortcut entries could not be activated. Review your choices before applying changes.", context: "Bounded invalid saved action preferences.", params: ["count"] },
+  "actions.connectHintNoSearch": { message: "Select a target with arrows. {submit} connects; {cancel} cancels.", context: "Visible graph connection mode when search shortcut is disabled.", params: ["submit", "cancel"], referenceParams: [] },
+  "actions.connectFrom": { message: "Connect from {origin}", context: "Announce the captured visible-connection origin.", params: ["origin"], referenceParams: ["origin"] },
+  "actions.migrationSkipped": { message: "New default shortcuts were omitted to preserve your saved choices: {actions}.", context: "Explain migrated local shortcut collisions.", params: ["actions"], referenceParams: [] },
+  "actions.migrationIssues": { message: "{count} saved shortcut entries could not be activated. Review your choices before applying changes.", context: "Bounded invalid saved action preferences.", params: ["count"], referenceParams: [] },
   "actions.invalid-target": { message: "This action does not accept that target.", context: "Action target validation.", params: [] },
   "actions.savedPending": { message: "Saved. The graph update is still pending.", context: "Committed action awaiting graph publication.", params: [] },
   "actions.searchPlaceholder": { message: "Search actions", context: "Action management and keyboard workflow UI.", params: [] },
@@ -82,18 +115,18 @@ export const englishCatalog = {
   "actions.statusFilter": { message: "Filter by status", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.unsavedChanges": { message: "Unsaved changes", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.saved": { message: "Actions and shortcuts saved.", context: "Action management and keyboard workflow UI.", params: [] },
-  "actions.saveFailed": { message: "Could not save: {error}", context: "Action management and keyboard workflow UI.", params: ["error"] },
+  "actions.saveFailed": { message: "Could not save: {error}", context: "Action management and keyboard workflow UI.", params: ["error"], referenceParams: [] },
   "actions.resolveConflicts": { message: "This shortcut matches more than one K-Plex action.", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.unsupportedPreferences": { message: "These preferences require a newer K-Plex version. Update before changing them.", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.bindingLimit": { message: "An action supports up to four local shortcuts.", context: "Action management and keyboard workflow UI.", params: [] },
-  "actions.conflictsWithAction": { message: "This shortcut overlaps with {action}.", context: "Action management and keyboard workflow UI.", params: ["action"] },
+  "actions.conflictsWithAction": { message: "This shortcut overlaps with {action}.", context: "Action management and keyboard workflow UI.", params: ["action"], referenceParams: [] },
   "actions.replaceConflicts": { message: "Replace overlapping shortcuts", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.bindingCancelled": { message: "Shortcut change cancelled.", context: "Action management and keyboard workflow UI.", params: [] },
-  "actions.resultCount": { message: "Showing {shown} of {total} actions", context: "Action management and keyboard workflow UI.", params: ["shown", "total"] },
+  "actions.resultCount": { message: "Showing {shown} of {total} actions", context: "Action management and keyboard workflow UI.", params: ["shown", "total"], referenceParams: [] },
   "actions.addBinding": { message: "Add local shortcut", context: "Action management and keyboard workflow UI.", params: [] },
-  "actions.removeBinding": { message: "Remove {binding}", context: "Action management and keyboard workflow UI.", params: ["binding"] },
-  "actions.localContexts": { message: "Local contexts: {contexts}", context: "Action management and keyboard workflow UI.", params: ["contexts"] },
-  "actions.targetPolicy": { message: "Target: {target}", context: "Action management and keyboard workflow UI.", params: ["target"] },
+  "actions.removeBinding": { message: "Remove {binding}", context: "Action management and keyboard workflow UI.", params: ["binding"], referenceParams: [] },
+  "actions.localContexts": { message: "Local contexts: {contexts}", context: "Action management and keyboard workflow UI.", params: ["contexts"], referenceParams: [] },
+  "actions.targetPolicy": { message: "Target: {target}", context: "Action management and keyboard workflow UI.", params: ["target"], referenceParams: [] },
   "actions.available": { message: "Available now", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.needsTarget": { message: "Choose a target to continue", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.publishCommand": { message: "Add to Obsidian Command Palette and Hotkeys; no global shortcut is assigned", context: "Publication tooltip explicitly distinguishes command registration from keyboard assignment.", params: [] },
@@ -101,7 +134,7 @@ export const englishCatalog = {
   "actions.actualUnpublished": { message: "Currently unregistered", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.manageObsidian": { message: "Manage global hotkeys", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.localOnly": { message: "Local action only", context: "Action management and keyboard workflow UI.", params: [] },
-  "actions.showMore": { message: "Show {count} more actions", context: "Action management and keyboard workflow UI.", params: ["count"] },
+  "actions.showMore": { message: "Show {count} more actions", context: "Action management and keyboard workflow UI.", params: ["count"], referenceParams: [] },
   "actions.characterShortcuts": { message: "Enable character shortcuts", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.characterShortcutsHelp": { message: "Allow unmodified printable shortcuts in focused Plex regions. Modified shortcuts remain available.", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.crossSection": { message: "Move across section boundaries", context: "Action management and keyboard workflow UI.", params: [] },
@@ -393,16 +426,16 @@ export const englishCatalog = {
   "actions.helpTitle": { message: "Keyboard shortcuts", context: "Title of the read-only local shortcut reference.", params: [] },
   "actions.helpDescription": { message: "These shortcuts work while the Plex is focused. Look up keys here without running commands.", context: "Explain the focused-Plex scope and read-only purpose of keyboard help.", params: [] },
   "actions.helpConfigure": { message: "Configure shortcuts", context: "Open native action settings from the read-only shortcut reference.", params: [] },
-  "graph.typeSelectionStatus": { message: "“{query}” · {index} of {count}", context: "Status for typing to select displayed node labels; nodes remain visible and Tab cycles the matches.", params: ["query", "index", "count"] },
-  "graph.typeSelectionCount": { message: "{index} of {count}", context: "Compact visible match position beside the typing-to-select query.", params: ["index", "count"] },
+  "graph.typeSelectionStatus": { message: "“{query}” · {index} of {count}", context: "Status for typing to select displayed node labels; nodes remain visible and Tab cycles the matches.", params: ["query", "index", "count"], referenceParams: [] },
+  "graph.typeSelectionCount": { message: "{index} of {count}", context: "Compact visible match position beside the typing-to-select query.", params: ["index", "count"], referenceParams: [] },
   "actions.pinsPlaceholder": { message: "Search pinned nodes", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.historyPlaceholder": { message: "Search navigation history", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.nodesPlaceholder": { message: "Search displayed nodes", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.connectionsPlaceholder": { message: "Choose a connection", context: "Action management and keyboard workflow UI.", params: [] },
-  "actions.missingTarget": { message: "Unavailable: {path}", context: "Action management and keyboard workflow UI.", params: ["path"] },
-  "actions.connectHint": { message: "Select a target with arrows. {submit} opens the composer; {search} opens target search; {cancel} cancels.", context: "Action management and keyboard workflow UI.", params: ["submit", "search", "cancel"] },
+  "actions.missingTarget": { message: "Unavailable: {path}", context: "Action management and keyboard workflow UI.", params: ["path"], referenceParams: ["path"] },
+  "actions.connectHint": { message: "Select a target with arrows. {submit} opens the composer; {search} opens target search; {cancel} cancels.", context: "Action management and keyboard workflow UI.", params: ["submit", "search", "cancel"], referenceParams: [] },
   "actions.connectTargetPlaceholder": { message: "Choose an existing target", context: "Action management and keyboard workflow UI.", params: [] },
-  "actions.physicalBinding": { message: "{binding} (physical position)", context: "Action management and keyboard workflow UI.", params: ["binding"] },
+  "actions.physicalBinding": { message: "{binding} (physical position)", context: "Action management and keyboard workflow UI.", params: ["binding"], referenceParams: [] },
   "actions.busy": { message: "This action is already in progress.", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.failed": { message: "The action could not finish. Try again after checking its target.", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.invalid-request": { message: "This action request is invalid.", context: "Action management and keyboard workflow UI.", params: [] },
@@ -419,8 +452,8 @@ export const englishCatalog = {
   "actions.publicationFailed": { message: "Some commands could not be registered. Retry the publication change or reload K-Plex.", context: "Action management and keyboard workflow UI.", params: [] },
   "actions.hostHotkeyGuidance": { message: "Published actions can receive global shortcuts in Settings → Hotkeys. Local Plex shortcuts are independent.", context: "Action management and keyboard workflow UI.", params: [] },
   "addRelated.endpointChanged": { message: "The original note was deleted or replaced. Choose a new target.", context: "Action management and keyboard workflow UI.", params: [] },
-  "addRelated.partialCreation": { message: "Created {path}, but the relationship is incomplete: {error}", context: "Action management and keyboard workflow UI.", params: ["path", "error"] },
-  "addRelated.originTitle": { message: "Add relationship to {origin}", context: "Action management and keyboard workflow UI.", params: ["origin"] },
+  "addRelated.partialCreation": { message: "Created {path}, but the relationship is incomplete: {error}", context: "Action management and keyboard workflow UI.", params: ["path", "error"], referenceParams: ["path"] },
+  "addRelated.originTitle": { message: "Add relationship to {origin}", context: "Action management and keyboard workflow UI.", params: ["origin"], referenceParams: ["origin"] },
   "addRelated.completionMode": { message: "After saving", context: "Action management and keyboard workflow UI.", params: [] },
   "addRelated.completion.configured": { message: "Use configured behavior", context: "Action management and keyboard workflow UI.", params: [] },
   "addRelated.completion.return": { message: "Return", context: "Action management and keyboard workflow UI.", params: [] },
@@ -429,7 +462,7 @@ export const englishCatalog = {
   "addRelated.completion.edit": { message: "Edit note", context: "Action management and keyboard workflow UI.", params: [] },
   "addRelated.savedPending": { message: "Saved. Graph update is pending; refresh before continuing.", context: "Action management and keyboard workflow UI.", params: [] },
   "addRelated.refreshSaved": { message: "Refresh saved relationship", context: "Action management and keyboard workflow UI.", params: [] },
-  "addRelated.recoverFile": { message: "Created file: {path}. Recover its relationship without creating another file.", context: "Action management and keyboard workflow UI.", params: ["path"] },
+  "addRelated.recoverFile": { message: "Created file: {path}. Recover its relationship without creating another file.", context: "Action management and keyboard workflow UI.", params: ["path"], referenceParams: ["path"] },
   "addRelated.linkCreatedFile": { message: "Link created file", context: "Action management and keyboard workflow UI.", params: [] },
   "addRelated.openCreatedFile": { message: "Open created file", context: "Action management and keyboard workflow UI.", params: [] },
   "addRelated.closedBeforeLink": { message: "The composer closed before the relationship was saved.", context: "Action management and keyboard workflow UI.", params: [] },
@@ -450,8 +483,8 @@ export const englishCatalog = {
   "indexing.throttleResponsive": { message: "Responsive (recommended)", context: "Default background throttle option.", params: [] },
   "indexing.throttleBalanced": { message: "Balanced", context: "Moderate background throttle option.", params: [] },
   "indexing.throttleFaster": { message: "Faster", context: "Least background idle time option.", params: [] },
-  "indexing.urlsProgress": { message: "Discovering web links — {processed} / {total} notes", context: "Independent URL scan progress; the local graph remains usable.", params: ["processed", "total"] },
-  "indexing.urlsRestoring": { message: "Loading cached web links — {restored} notes loaded", context: "Actual restored URL-cache note count while the scan inventory total is not yet known.", params: ["restored"] },
+  "indexing.urlsProgress": { message: "Discovering web links — {processed} / {total} notes", context: "Independent URL scan progress; the local graph remains usable.", params: ["processed", "total"], referenceParams: [] },
+  "indexing.urlsRestoring": { message: "Loading cached web links — {restored} notes loaded", context: "Actual restored URL-cache note count while the scan inventory total is not yet known.", params: ["restored"], referenceParams: [] },
   "indexing.urlsPreparing": { message: "Preparing web link index", context: "Independent URL preparation before a scan total or restored note count is available.", params: [] },
   "indexing.urlsIncomplete": { message: "Web link discovery incomplete", context: "A note read failed in independent URL discovery; existing relations remain usable.", params: [] },
   "filter.sourcePropertyUrl": { message: "Property web link", context: "Relationship source filter for web links in document properties.", params: [] },
@@ -464,7 +497,7 @@ export const englishCatalog = {
   "indexing.localUnavailable": { message: "Local graph counts unavailable", context: "A current local host input is missing or exceeds the supported bound; unrelated global indexing is optional.", params: [] },
   "indexing.cache": { message: "Index cache", context: "Settings maintenance group.", params: [] },
   "indexing.purgeAction": { message: "Purge index cache", context: "Derived-cache maintenance row.", params: [] },
-  "indexing.cacheHelp": { message: "Approximate K-Plex IndexedDB cache size: {size}. Clears cached graphs, parsed note bodies, source facts, web links and dependency data. Restart Obsidian after purging.", context: "Logical payload estimate, not physical disk allocation.", params: ["size"] },
+  "indexing.cacheHelp": { message: "Approximate K-Plex IndexedDB cache size: {size}. Clears cached graphs, parsed note bodies, source facts, web links and dependency data. Restart Obsidian after purging.", context: "Logical payload estimate, not physical disk allocation.", params: ["size"], referenceParams: [] },
   "indexing.cacheCalculating": { message: "Calculating…", context: "Pending cache estimate.", params: [] },
   "indexing.cacheUnavailable": { message: "Unavailable", context: "Failed or unsupported cache estimate.", params: [] },
   "indexing.purgeTitle": { message: "Purge K-Plex index cache?", context: "Destructive derived-cache confirmation title.", params: [] },
@@ -504,7 +537,7 @@ export const englishCatalog = {
   "styles.propertyHelp": {
     message: "Style notes where “{property}” matches this value. Existing values and vault tags are suggested as you type.",
     context: "K-Plex node style settings and imported style management.",
-    params: ["property"],
+    params: ["property"], referenceParams: ["property"],
   },
   "styles.typeHelp": {
     message: "Choose matching by a property value or a primary style tag prefix.",
@@ -574,12 +607,12 @@ export const englishCatalog = {
   "styles.managerHelp": {
     message: "Manage styles for values of “{property}” and tag prefixes.",
     context: "K-Plex node style settings and imported style management.",
-    params: ["property"],
+    params: ["property"], referenceParams: ["property"],
   },
   "styles.resultCount": {
     message: "{count} styles · {results} results",
     context: "K-Plex node style settings and imported style management.",
-    params: ["count", "results"],
+    params: ["count", "results"], referenceParams: [],
   },
   "styles.noMatches": {
     message: "No node styles match this search.",
@@ -594,13 +627,13 @@ export const englishCatalog = {
   "styles.settingsSummary": {
     message: "{count} custom styles. Search and edit property-value and tag styles.",
     context: "K-Plex node style settings and imported style management.",
-    params: ["count"],
+    params: ["count"], referenceParams: [],
   },
 
   "collection.showMore": {
     message: "Show {count} more",
     context: "Button that renders the next bounded batch in a settings manager list.",
-    params: ["count"],
+    params: ["count"], referenceParams: [],
   },
   "command.openGraph": {
     message: "Open graph",
@@ -619,7 +652,7 @@ export const englishCatalog = {
     },
     countParam: "count",
     context: "Brief notice after an index rebuild. Both English forms intentionally preserve the existing wording in L00.",
-    params: ["count"],
+    params: ["count"], referenceParams: [],
   },
   "search.ariaLabel": {
     message: "Search Vault",
@@ -634,7 +667,7 @@ export const englishCatalog = {
   "search.placeholderWithShortcut": {
     message: "Search Vault… ({shortcut})",
     context: "Node-search placeholder. {shortcut} is the formatted effective shortcut that focuses this field.",
-    params: ["shortcut"],
+    params: ["shortcut"], referenceParams: [],
   },
   "find.ariaLabel": { message: "Find in this Plex", context: "Accessible name for local Find and its touch magnifier.", params: [] },
   "find.placeholder": { message: "Find in this Plex…", context: "Find highlights projected nodes and links without a dropdown.", params: [] },
@@ -643,7 +676,7 @@ export const englishCatalog = {
   "filter.panelTitle": { message: "Filters and lenses", context: "Draggable filter-panel heading.", params: [] },
   "filter.closePanel": { message: "Close filters and lenses", context: "Accessible name for closing the draggable filter panel.", params: [] },
   "find.close": { message: "Close Find", context: "Dismiss local Find and clear its highlights.", params: [] },
-  "find.matches": { plural: { one: "{count} match", other: "{count} matches" }, countParam: "count", context: "Number of matching projected Plex nodes.", params: ["count"] },
+  "find.matches": { plural: { one: "{count} match", other: "{count} matches" }, countParam: "count", context: "Number of matching projected Plex nodes.", params: ["count"], referenceParams: [] },
   "toolbar.navigateBack": {
     message: "Navigate back",
     context: "Accessible label/tooltip for the top-bar button that navigates backward in K-Plex history.",
@@ -773,7 +806,7 @@ export const englishCatalog = {
   "ontology.addTitle": {
     message: "Add “{field}” to K-Plex ontology",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["field"],
+    params: ["field"], referenceParams: ["field"],
   },
   "ontology.chooseRoleHelp": {
     message: "Choose how links stored in this field should appear in K-Plex. The field is removed from any previous ontology group first.",
@@ -828,17 +861,17 @@ export const englishCatalog = {
   "note.existsNamed": {
     message: "A note named “{name}” already exists in the vault.",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "file.existsAt": {
     message: "A file already exists at {path}.",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["path"],
+    params: ["path"], referenceParams: ["path"],
   },
   "note.createFailed": {
     message: "Could not create note: {error}",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["error"],
+    params: ["error"], referenceParams: [],
   },
   "folderNote.title": {
     message: "Add note to folder",
@@ -848,7 +881,7 @@ export const englishCatalog = {
   "folderNote.help": {
     message: "Create a file in {folder}. Its folder location defines the relationship, so no note-to-note link will be added.",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["folder"],
+    params: ["folder"], referenceParams: ["folder"],
   },
   "folderNote.noteName": {
     message: "Note name",
@@ -883,12 +916,12 @@ export const englishCatalog = {
   "delete.noteConfirm": {
     message: "Delete “{name}”? The file will be deleted using Obsidian's configured trash behavior. K-Plex will remove references stored in note properties and leave Markdown-body links for manual review.",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "delete.placeholderConfirm": {
     message: "Delete “{name}”? K-Plex will remove references stored in note properties. Markdown-body links are left in place for manual review.",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "delete.dontAskAgain": {
     message: "I understand, don't ask me again",
@@ -928,7 +961,7 @@ export const englishCatalog = {
   "references.help": {
     message: "K-Plex removed property references to “{name}”. The links below are in Markdown content and are left for you to review manually.",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "references.markdownLink": {
     message: "Markdown link",
@@ -958,12 +991,12 @@ export const englishCatalog = {
   "references.sourceLine": {
     message: "{source} · line {line}",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["source", "line"],
+    params: ["source", "line"], referenceParams: [],
   },
   "ghost.createTitle": {
     message: "Create “{name}”",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "ghost.createHelpWithExcalidraw": {
     message: "Choose where to create this note and whether it should be Markdown or an Excalidraw drawing.",
@@ -1003,7 +1036,7 @@ export const englishCatalog = {
   "rename.failed": {
     message: "Could not rename note: {error}",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["error"],
+    params: ["error"], referenceParams: [],
   },
   "rename.placeholder": {
     message: "Note name",
@@ -1043,7 +1076,7 @@ export const englishCatalog = {
   "node.accessibleLabel": {
     message: "{label} — {path}",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["label", "path"],
+    params: ["label", "path"], referenceParams: ["label","path"],
   },
   "node.foldSectionChildren": {
     message: "Fold section children",
@@ -1058,12 +1091,12 @@ export const englishCatalog = {
   "node.hiddenCount": {
     message: "{count} hidden",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["count"],
+    params: ["count"], referenceParams: [],
   },
   "node.gateTagDisabled": {
     message: "{gate} gate · drag linking is disabled for tag thoughts",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["gate"],
+    params: ["gate"], referenceParams: [],
   },
   "node.gateFolderChild": {
     message: "child gate · drag to create a note in this folder",
@@ -1073,12 +1106,12 @@ export const englishCatalog = {
   "node.gateFolderDisabled": {
     message: "{gate} gate · folder relationship editing is disabled",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["gate"],
+    params: ["gate"], referenceParams: [],
   },
   "node.gateVisible": {
     message: "{gate} gate · {count} visible",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["gate", "count"],
+    params: ["gate", "count"], referenceParams: [],
   },
   "node.gatePartial": {
     message: "Additional relationships may be available",
@@ -1088,7 +1121,7 @@ export const englishCatalog = {
   "node.gateEmpty": {
     message: "{gate} gate · no relationships",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["gate"],
+    params: ["gate"], referenceParams: [],
   },
   "relation.move": {
     message: "Move relationship",
@@ -1098,7 +1131,7 @@ export const englishCatalog = {
   "relation.addRole": {
     message: "Add {role}",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["role"],
+    params: ["role"], referenceParams: [],
   },
   "relation.markdownNote": {
     message: "Markdown note",
@@ -1123,7 +1156,7 @@ export const englishCatalog = {
   "relation.inverseStorage": {
     message: "{role} is stored on the Markdown note using the inverse document property {property}.",
     context: "Legacy K-Plex user-facing copy migrated during the full English catalog pass.",
-    params: ["role", "property"],
+    params: ["role", "property"], referenceParams: ["property"],
   },
   "relation.save": {
     message: "Save relationship",
@@ -1315,12 +1348,12 @@ export const englishCatalog = {
   "index.startupNotesProgress": {
     message: "{activity} — {processed} / {total} notes ({percent}%)",
     context: "Actual owners visited in the current startup pass; percentage uses its captured note count.",
-    params: ["activity", "processed", "total", "percent"],
+    params: ["activity", "processed", "total", "percent"], referenceParams: [],
   },
   "index.startupRecordsProgress": {
     message: "{activity} — {processed} records loaded",
     context: "Actual records loaded in a startup phase with no meaningful denominator.",
-    params: ["activity", "processed"],
+    params: ["activity", "processed"], referenceParams: [],
   },
   "index.statusReady": {
     message: "Status: index ready",
@@ -1345,7 +1378,7 @@ export const englishCatalog = {
   "index.statusIndexingProgress": {
     message: "Status: indexing {indexed} of {total} files",
     context: "K-Plex index indicator detail showing actual progressive Markdown indexing progress.",
-    params: ["indexed", "total"],
+    params: ["indexed", "total"], referenceParams: [],
   },
   "index.statusSavingCache": {
     message: "Status: saving index to cache",
@@ -1370,7 +1403,7 @@ export const englishCatalog = {
   "index.statusUpdatingSearchAliases": {
     message: "Updating search aliases — {processed} / {total} notes",
     context: "Active bounded URL alias grammar repair after primary cached graph promotion.",
-    params: ["processed", "total"],
+    params: ["processed", "total"], referenceParams: [],
   },
   "index.statusUpdatingSearchVocabulary": {
     message: "Updating search vocabulary",
@@ -1385,7 +1418,7 @@ export const englishCatalog = {
   "index.filesIndexed": {
     message: "{indexed} of {total} files indexed.",
     context: "K-Plex index indicator detail showing published Markdown source progress.",
-    params: ["indexed", "total"],
+    params: ["indexed", "total"], referenceParams: [],
   },
   "index.incompleteBubble": {
     message: "Indexing in progress. Graph and search results are incomplete. Hover the index indicator to see current status.",
@@ -1450,7 +1483,7 @@ export const englishCatalog = {
   "app.syncStatusPinned": {
     message: "K-Plex is pinned to a fixed note tab{suffix}",
     context: "K-Plex host shell, command, toolbar, and status copy.",
-    params: ["suffix"],
+    params: ["suffix"], referenceParams: [],
   },
   "app.syncStatusPinnedUnavailable": {
     message: "K-Plex has a pinned-tab preference, but the tab is not currently connected",
@@ -1460,7 +1493,7 @@ export const englishCatalog = {
   "app.syncActions": {
     message: "{status}. Click for sync actions and link mode.",
     context: "K-Plex host shell, command, toolbar, and status copy.",
-    params: ["status"],
+    params: ["status"], referenceParams: [],
   },
   "app.displayAliasesOn": {
     message: "Display aliases: on",
@@ -1520,7 +1553,7 @@ export const englishCatalog = {
   "app.unpinNode": {
     message: "Unpin {title}",
     context: "K-Plex host shell, command, toolbar, and status copy.",
-    params: ["title"],
+    params: ["title"], referenceParams: ["title"],
   },
   "app.zoneParents": {
     message: "PARENTS",
@@ -1555,7 +1588,7 @@ export const englishCatalog = {
   "app.openSidecarAt": {
     message: "Open Sidecar on the {position}",
     context: "K-Plex host shell, command, toolbar, and status copy.",
-    params: ["position"],
+    params: ["position"], referenceParams: [],
   },
   "app.foldForSidecar": {
     message: "Fold K-Plex and give the companion document the full split",
@@ -1617,12 +1650,12 @@ export const englishCatalog = {
   "notice.folder": {
     message: "Folder: {name}",
     context: "K-Plex notices, ontology actions, validation, or evidence navigation copy.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "notice.tag": {
-    message: "Tag: #{name}",
+    message: "Tag: {name}",
     context: "K-Plex notices, ontology actions, validation, or evidence navigation copy.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "notice.openPluginSettings": {
     message: "Open Settings → Community plugins → K-Plex.",
@@ -1662,7 +1695,7 @@ export const englishCatalog = {
   "notice.excalidrawUpdateRequired": {
     message: "Update Excalidraw to version {version} or newer for full K-Plex drawing integration. The drawing opened in compatibility mode.",
     context: "Notice shown when K-Plex opens an Excalidraw drawing through an older integration contract.",
-    params: ["version"],
+    params: ["version"], referenceParams: [],
   },
   "error.excalidrawCreatedFileMissing": {
     message: "Excalidraw did not return a created file.",
@@ -1697,7 +1730,7 @@ export const englishCatalog = {
   "ontology.contextMenu": {
     message: "Add/change “{field}” in K-Plex ontology",
     context: "K-Plex notices, ontology actions, validation, or evidence navigation copy.",
-    params: ["field"],
+    params: ["field"], referenceParams: ["field"],
   },
   "command.ontologySelect": {
     message: "Assign field to K-Plex ontology…",
@@ -1747,7 +1780,7 @@ export const englishCatalog = {
   "evidence.navigateLine": {
     message: "Navigate to line {line}",
     context: "K-Plex notices, ontology actions, validation, or evidence navigation copy.",
-    params: ["line"],
+    params: ["line"], referenceParams: [],
   },
   "evidence.navigateLink": {
     message: "Navigate to link",
@@ -1757,32 +1790,32 @@ export const englishCatalog = {
   "evidence.navigateLinkNumber": {
     message: "Navigate to link {index}",
     context: "K-Plex notices, ontology actions, validation, or evidence navigation copy.",
-    params: ["index"],
+    params: ["index"], referenceParams: [],
   },
   "evidence.navigateProperty": {
     message: "Navigate to property “{field}”",
     context: "K-Plex notices, ontology actions, validation, or evidence navigation copy.",
-    params: ["field"],
+    params: ["field"], referenceParams: ["field"],
   },
   "evidence.property": {
     message: "Property “{field}”",
     context: "K-Plex notices, ontology actions, validation, or evidence navigation copy.",
-    params: ["field"],
+    params: ["field"], referenceParams: ["field"],
   },
   "evidence.paragraphAroundLine": {
     message: "Paragraph around line {line}",
     context: "K-Plex notices, ontology actions, validation, or evidence navigation copy.",
-    params: ["line"],
+    params: ["line"], referenceParams: [],
   },
   "evidence.linkOccurrenceLine": {
     message: "Link occurrence · line {line}",
     context: "K-Plex notices, ontology actions, validation, or evidence navigation copy.",
-    params: ["line"],
+    params: ["line"], referenceParams: [],
   },
   "evidence.linkLine": {
     message: "Link · line {line}",
     context: "K-Plex notices, ontology actions, validation, or evidence navigation copy.",
-    params: ["line"],
+    params: ["line"], referenceParams: [],
   },
 
 
@@ -1794,12 +1827,12 @@ export const englishCatalog = {
   "addRelated.relationshipFailed": {
     message: "Could not add relationship: {error}",
     context: "Add-related-note dialog copy and accessibility labels.",
-    params: ["error"],
+    params: ["error"], referenceParams: [],
   },
   "addRelated.createFailed": {
     message: "Could not create related note: {error}",
     context: "Add-related-note dialog copy and accessibility labels.",
-    params: ["error"],
+    params: ["error"], referenceParams: [],
   },
   "addRelated.placeholderAliasNotSaved": {
     message: "Placeholder nodes cannot persist aliases. The alias will not be saved.",
@@ -1809,12 +1842,12 @@ export const englishCatalog = {
   "addRelated.placeholderFailed": {
     message: "Could not create placeholder: {error}",
     context: "Add-related-note dialog copy and accessibility labels.",
-    params: ["error"],
+    params: ["error"], referenceParams: [],
   },
   "addRelated.webLinkFailed": {
     message: "Could not add web link: {error}",
     context: "Add-related-note dialog copy and accessibility labels.",
-    params: ["error"],
+    params: ["error"], referenceParams: [],
   },
   "addRelated.searchPlaceholder": {
     message: "Find a note, type a new name, or paste a web link…",
@@ -1839,7 +1872,7 @@ export const englishCatalog = {
   "addRelated.ontologyPlaceholder": {
     message: "Ontology · {field}",
     context: "Add-related-note dialog copy and accessibility labels.",
-    params: ["field"],
+    params: ["field"], referenceParams: ["field"],
   },
   "addRelated.ontologyAria": {
     message: "Ontology field",
@@ -1904,7 +1937,7 @@ export const englishCatalog = {
   "addRelated.linkTo": {
     message: "Link to {title}",
     context: "Add-related-note dialog copy and accessibility labels.",
-    params: ["title"],
+    params: ["title"], referenceParams: ["title"],
   },
   "addRelated.link": {
     message: "Link",
@@ -1924,7 +1957,7 @@ export const englishCatalog = {
   "addRelated.selectedExisting": {
     message: "Selected existing note: {path}",
     context: "Add-related-note dialog copy and accessibility labels.",
-    params: ["path"],
+    params: ["path"], referenceParams: ["path"],
   },
   "addRelated.webMarkdownExplanation": {
     message: "Web links can only be added from a Markdown node because the relationship is stored in document properties.",
@@ -1934,7 +1967,7 @@ export const englishCatalog = {
   "addRelated.webAliasStatus": {
     message: "Add “{alias}” as a web link.",
     context: "Add-related-note dialog copy and accessibility labels.",
-    params: ["alias"],
+    params: ["alias"], referenceParams: ["alias"],
   },
   "addRelated.webStatus": {
     message: "Add this web link. Add an optional alias for its display text.",
@@ -1949,12 +1982,12 @@ export const englishCatalog = {
   "addRelated.createStatus": {
     message: "Create “{name}” as Markdown, or a placeholder. Alias is optional.",
     context: "Add-related-note dialog copy and accessibility labels when Excalidraw creation is unavailable.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "addRelated.createStatusWithExcalidraw": {
     message: "Create “{name}” as Markdown, Excalidraw, or a placeholder. Alias is optional.",
     context: "Add-related-note dialog copy and accessibility labels when Excalidraw creation is available.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "addRelated.title": {
     message: "Add",
@@ -1976,7 +2009,7 @@ export const englishCatalog = {
   "relation.updateFailed": {
     message: "Could not update relationship: {error}",
     context: "Relationship create/relink dialog copy.",
-    params: ["error"],
+    params: ["error"], referenceParams: [],
   },
   "relation.specifyOntology": {
     message: "Specify connection ontology",
@@ -2001,7 +2034,7 @@ export const englishCatalog = {
   "relation.recommendedSuffix": {
     message: "{title} — recommended",
     context: "Relationship create/relink dialog copy.",
-    params: ["title"],
+    params: ["title"], referenceParams: ["title"],
   },
   "relation.ontologyEvidenceRecommendation": {
     message: "K-Plex recommends the note that already contains the strongest relationship evidence. The new ontology is added there; existing ontology sources are kept.",
@@ -2036,17 +2069,17 @@ export const englishCatalog = {
   "relation.willAddProperty": {
     message: "K-Plex will add {field} in {note}. Existing ontology sources are kept.",
     context: "Relationship create/relink dialog copy.",
-    params: ["field", "note"],
+    params: ["field", "note"], referenceParams: ["field","note"],
   },
   "relation.willWriteProperty": {
     message: "K-Plex will write {field} in {note}.",
     context: "Relationship create/relink dialog copy.",
-    params: ["field", "note"],
+    params: ["field", "note"], referenceParams: ["field","note"],
   },
   "relation.inverseTargetStorage": {
     message: "The relationship is stored on the Markdown target using the inverse property {property}.",
     context: "Relationship create/relink dialog copy.",
-    params: ["property"],
+    params: ["property"], referenceParams: ["property"],
   },
   "relation.specifyOntologyButton": {
     message: "Specify ontology",
@@ -2483,7 +2516,7 @@ export const englishCatalog = {
   "filter.showLabel": {
     message: "Show {label}",
     context: "Graph Lens and visible-Plex filter user interface copy.",
-    params: ["label"],
+    params: ["label"], referenceParams: [],
   },
   "filter.siblings": {
     message: "Siblings",
@@ -2643,12 +2676,12 @@ export const englishCatalog = {
   "filter.turnOffLens": {
     message: "Turn off {name}",
     context: "Graph Lens and visible-Plex filter user interface copy.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "filter.turnOnLens": {
     message: "Turn on {name}",
     context: "Graph Lens and visible-Plex filter user interface copy.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "filter.on": {
     message: "On",
@@ -2663,12 +2696,12 @@ export const englishCatalog = {
   "filter.editLens": {
     message: "Edit {name}",
     context: "Graph Lens and visible-Plex filter user interface copy.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "filter.deleteLens": {
     message: "Delete {name}",
     context: "Graph Lens and visible-Plex filter user interface copy.",
-    params: ["name"],
+    params: ["name"], referenceParams: ["name"],
   },
   "filter.name": {
     message: "Name",
@@ -2878,7 +2911,7 @@ export const englishCatalog = {
   "filter.activeLensCount": {
     message: "{count} active lenses",
     context: "Graph Lens and visible-Plex filter user interface copy.",
-    params: ["count"],
+    params: ["count"], referenceParams: [],
   },
 
   "graph.zoneParents": {
@@ -2964,7 +2997,7 @@ export const englishCatalog = {
   "graph.resolved": {
     message: "Resolved: {roles}",
     context: "Plex graph controls, menus, relationship evidence, and accessibility copy.",
-    params: ["roles"],
+    params: ["roles"], referenceParams: [],
   },
   "graph.resolvedHidden": {
     message: "Resolved: Hidden",
@@ -2974,12 +3007,12 @@ export const englishCatalog = {
   "graph.evidenceDecision": {
     message: "{source} — {resolution}",
     context: "Plex graph controls, menus, relationship evidence, and accessibility copy.",
-    params: ["source", "resolution"],
+    params: ["source", "resolution"], referenceParams: [],
   },
   "graph.evidenceDecisionOverridden": {
     message: "{source} — {resolution} · overridden",
     context: "Plex graph controls, menus, relationship evidence, and accessibility copy.",
-    params: ["source", "resolution"],
+    params: ["source", "resolution"], referenceParams: [],
   },
   "graph.selectNote": {
     message: "Select a note to start navigating K-Plex.",
@@ -3104,17 +3137,17 @@ export const englishCatalog = {
   "graph.filterZonePlaceholder": {
     message: "Filter {zone}…",
     context: "Plex graph controls, menus, relationship evidence, and accessibility copy.",
-    params: ["zone"],
+    params: ["zone"], referenceParams: [],
   },
   "graph.filterZone": {
     message: "Filter {zone}",
     context: "Plex graph controls, menus, relationship evidence, and accessibility copy.",
-    params: ["zone"],
+    params: ["zone"], referenceParams: [],
   },
   "graph.zoneCount": {
     message: "{count} {zone}",
     context: "Plex graph controls, menus, relationship evidence, and accessibility copy.",
-    params: ["count", "zone"],
+    params: ["count", "zone"], referenceParams: [],
   },
   "graph.updatingRelationship": {
     message: "Updating relationship…",
@@ -3125,8 +3158,8 @@ export const englishCatalog = {
   "graph.verticalDensity": { message: "Vertical density", context: "Independent density controls sharing the current surface layout profile.", params: [] },
   "graph.horizontalDensityShort": { message: "Horizontal", context: "Independent density controls sharing the current surface layout profile.", params: [] },
   "graph.verticalDensityShort": { message: "Vertical", context: "Independent density controls sharing the current surface layout profile.", params: [] },
-  "graph.horizontalDensityValue": { message: "Horizontal density {value}", context: "Independent density controls sharing the current surface layout profile.", params: ["value"] },
-  "graph.verticalDensityValue": { message: "Vertical density {value}", context: "Independent density controls sharing the current surface layout profile.", params: ["value"] },
+  "graph.horizontalDensityValue": { message: "Horizontal density {value}", context: "Independent density controls sharing the current surface layout profile.", params: ["value"], referenceParams: [] },
+  "graph.verticalDensityValue": { message: "Vertical density {value}", context: "Independent density controls sharing the current surface layout profile.", params: ["value"], referenceParams: [] },
   "settings.ui.horizontal.density.help": { message: "Higher values pack columns more closely and shorten labels.", context: "Independent density controls sharing the current surface layout profile.", params: [] },
   "settings.ui.vertical.density.help": { message: "Higher values reduce spacing between rows.", context: "Independent density controls sharing the current surface layout profile.", params: [] },
   "graph.density": {
@@ -3147,17 +3180,17 @@ export const englishCatalog = {
   "typography.desktop": { message: "Desktop", context: "Typography device scope.", params: [] },
   "typography.tablet": { message: "Tablet", context: "Typography device scope.", params: [] },
   "typography.mobile": { message: "Phone", context: "Typography device scope for the persisted mobile key.", params: [] },
-  "typography.deviceTitle": { message: "{device} typography", context: "Searchable native typography settings page.", params: ["device"] },
-  "typography.deviceField": { message: "{device}: {field}", context: "Scope-qualified typography row in native global settings search.", params: ["device", "field"] },
+  "typography.deviceTitle": { message: "{device} typography", context: "Searchable native typography settings page.", params: ["device"], referenceParams: [] },
+  "typography.deviceField": { message: "{device}: {field}", context: "Scope-qualified typography row in native global settings search.", params: ["device", "field"], referenceParams: [] },
   "typography.deviceHelp": { message: "Customize labels for this device. Unset values follow shared defaults across all Plex views.", context: "Device settings page description.", params: [] },
   "typography.customized": { message: "Customized for this device. Reset to follow shared defaults.", context: "Explicit device field status including equal-to-default values.", params: [] },
   "typography.inherited": { message: "Inherited from shared defaults. Changing this value customizes this device.", context: "Unset device field status.", params: [] },
   "typography.customizedShort": { message: "Customized", context: "Compact Plex device override status.", params: [] },
   "typography.inheritedShort": { message: "Shared defaults", context: "Compact Plex inherited typography status.", params: [] },
-  "typography.scopeHint": { message: "{device} · {state}", context: "Compact active device typography scope.", params: ["device", "state"] },
+  "typography.scopeHint": { message: "{device} · {state}", context: "Compact active device typography scope.", params: ["device", "state"], referenceParams: [] },
   "typography.resetField": { message: "Reset to shared default", context: "Native per-field typography reset.", params: [] },
   "typography.resetAll": { message: "Reset to shared defaults", context: "Plex device typography reset accessible name.", params: [] },
-  "typography.deviceReset": { message: "Reset {device} typography", context: "Native reset-all device typography setting.", params: ["device"] },
+  "typography.deviceReset": { message: "Reset {device} typography", context: "Native reset-all device typography setting.", params: ["device"], referenceParams: [] },
   "typography.deviceWidthHelp": { message: "Maximum width of center and surrounding nodes on this device. Tag and note-type styles can override it.", context: "Device width applies to center and regular roles before explicit styles.", params: [] },
   "typography.resetHelp": { message: "Reset font size, label length, node width and wrapping for this device.", context: "Device reset scope description.", params: [] },
   "typography.labelLengthShort": { message: "Label length", context: "Compact character budget rail caption.", params: [] },
@@ -3195,7 +3228,7 @@ export const englishCatalog = {
     plural: { one: "+{count} more evidence item", other: "+{count} more evidence items" },
     countParam: "count",
     context: "Count of additional relationship evidence items not shown in the hover summary.",
-    params: ["count"],
+    params: ["count"], referenceParams: [],
   },
 
   "explain.sourceResolvedNoteLink": {
@@ -3246,12 +3279,12 @@ export const englishCatalog = {
   "explain.line": {
     message: "line {line}",
     context: "Connection-details explanation modal copy.",
-    params: ["line"],
+    params: ["line"], referenceParams: [],
   },
   "explain.overriddenSuffix": {
     message: "{resolution} · Overridden",
     context: "Connection-details explanation modal copy.",
-    params: ["resolution"],
+    params: ["resolution"], referenceParams: [],
   },
   "explain.evidenceResolution": {
     message: "Evidence resolution",
@@ -3264,8 +3297,8 @@ export const englishCatalog = {
     params: [],
   },
   "explain.removeRelationship": { message: "Remove relationship", context: "Confirmed source-specific frontmatter removal action.", params: [] },
-  "explain.removeCoordinate": { message: "{note} · {field} → {target}", context: "Exact note, property and target edited by one source removal.", params: ["note", "field", "target"] },
-  "explain.removeConfirm": { message: "Remove references to “{target}” from the “{field}” property in “{note}”?", context: "Native confirmation identifies one property-wide target removal.", params: ["note", "field", "target"] },
+  "explain.removeCoordinate": { message: "{note} · {field} → {target}", context: "Exact note, property and target edited by one source removal.", params: ["note", "field", "target"], referenceParams: ["note","field","target"] },
+  "explain.removeConfirm": { message: "Remove references to “{target}” from the “{field}” property in “{note}”?", context: "Native confirmation identifies one property-wide target removal.", params: ["note", "field", "target"], referenceParams: ["note","field","target"] },
   "explain.removeScope": { message: "All references to this target in this property will be removed. Other property values, notes and body links are preserved.", context: "Repeated-target scope of frontmatter removal; does not promise formatting preservation or undo.", params: [] },
   "explain.removeSourceChanged": { message: "This source changed or is no longer editable. Review the refreshed details before removing it.", context: "Fresh confirmation is required after source identity or key changes.", params: [] },
   "explain.removeUnsupported": { message: "This property's links cannot be removed safely. Use Go to source to edit the note.", context: "Unsupported property grammar fails closed rather than modifying unrelated text.", params: [] },
@@ -3309,7 +3342,7 @@ export const englishCatalog = {
   "explain.detectedAs": {
     message: "Detected as: {signals}",
     context: "Connection-details explanation modal copy.",
-    params: ["signals"],
+    params: ["signals"], referenceParams: [],
   },
   "explain.goToSource": {
     message: "Go to source",
@@ -3324,7 +3357,7 @@ export const englishCatalog = {
   "explain.siblingOf": {
     message: "Displayed as a sibling of {center}. The connector shown here is the underlying parent → child relationship that makes the sibling derivation possible.",
     context: "Connection-details explanation modal copy.",
-    params: ["center"],
+    params: ["center"], referenceParams: ["center"],
   },
   "explain.sibling": {
     message: "Displayed as a sibling. The connector shown here is the underlying parent → child relationship that makes the sibling derivation possible.",
@@ -3339,7 +3372,7 @@ export const englishCatalog = {
   "explain.resolvedAs": {
     message: "Resolved as: {roles}",
     context: "Connection-details explanation modal copy.",
-    params: ["roles"],
+    params: ["roles"], referenceParams: [],
   },
   "explain.resolvedAsHidden": {
     message: "Resolved as: Hidden",
@@ -3420,7 +3453,7 @@ export const englishCatalog = {
   "styles.linkEditorTitle": {
     message: "Link style · {field}",
     context: "Settings, style editors, and manager copy.",
-    params: ["field"],
+    params: ["field"], referenceParams: ["field"],
   },
   "styles.linkEditorHelp": {
     message: "Change the appearance of links created by this relationship field. Reset returns it to the default link style.",
@@ -3575,12 +3608,12 @@ export const englishCatalog = {
   "styles.customSummary": {
     message: "Custom · {summary}",
     context: "Settings, style editors, and manager copy.",
-    params: ["summary"],
+    params: ["summary"], referenceParams: [],
   },
   "styles.defaultSummary": {
     message: "Default · {summary}",
     context: "Settings, style editors, and manager copy.",
-    params: ["summary"],
+    params: ["summary"], referenceParams: [],
   },
   "styles.searchNodePlaceholder": {
     message: "Search node styles…",
@@ -3605,17 +3638,17 @@ export const englishCatalog = {
   "styles.summaryRoughness": {
     message: "roughness {value}",
     context: "Settings, style editors, and manager copy.",
-    params: ["value"],
+    params: ["value"], referenceParams: [],
   },
   "styles.summaryFont": {
     message: "font {value}",
     context: "Settings, style editors, and manager copy.",
-    params: ["value"],
+    params: ["value"], referenceParams: [],
   },
   "styles.summaryIcon": {
     message: "icon: {icon}",
     context: "Settings, style editors, and manager copy.",
-    params: ["icon"],
+    params: ["icon"], referenceParams: [],
   },
   "styles.inheritedNodeDefaults": {
     message: "Uses inherited node defaults",
@@ -3690,7 +3723,7 @@ export const englishCatalog = {
   "settings.fileReadFailed": {
     message: "Could not read file: {error}",
     context: "Settings, style editors, and manager copy.",
-    params: ["error"],
+    params: ["error"], referenceParams: [],
   },
   "settings.importButton": {
     message: "Import",
@@ -3705,7 +3738,7 @@ export const englishCatalog = {
   "settings.invalidJson": {
     message: "Invalid JSON: {error}",
     context: "Settings, style editors, and manager copy.",
-    params: ["error"],
+    params: ["error"], referenceParams: [],
   },
   "settings.importedNotice": {
     message: "ExcaliBrain settings imported into K-Plex.",
@@ -3715,77 +3748,77 @@ export const englishCatalog = {
   "settings.importFailed": {
     message: "Import failed: {error}",
     context: "Settings, style editors, and manager copy.",
-    params: ["error"],
+    params: ["error"], referenceParams: [],
   },
   "styles.statusCustom11": {
     message: "{scopeCount} custom style · {matches} result",
     context: "Settings, style editors, and manager copy.",
-    params: ["scopeCount", "matches"],
+    params: ["scopeCount", "matches"], referenceParams: [],
   },
   "styles.statusCustom1n": {
     message: "{scopeCount} custom style · {matches} results",
     context: "Settings, style editors, and manager copy.",
-    params: ["scopeCount", "matches"],
+    params: ["scopeCount", "matches"], referenceParams: [],
   },
   "styles.statusCustomn1": {
     message: "{scopeCount} custom styles · {matches} result",
     context: "Settings, style editors, and manager copy.",
-    params: ["scopeCount", "matches"],
+    params: ["scopeCount", "matches"], referenceParams: [],
   },
   "styles.statusCustomnn": {
     message: "{scopeCount} custom styles · {matches} results",
     context: "Settings, style editors, and manager copy.",
-    params: ["scopeCount", "matches"],
+    params: ["scopeCount", "matches"], referenceParams: [],
   },
   "styles.statusFields11": {
     message: "{scopeCount} relationship field · {matches} result",
     context: "Settings, style editors, and manager copy.",
-    params: ["scopeCount", "matches"],
+    params: ["scopeCount", "matches"], referenceParams: [],
   },
   "styles.statusFields1n": {
     message: "{scopeCount} relationship field · {matches} results",
     context: "Settings, style editors, and manager copy.",
-    params: ["scopeCount", "matches"],
+    params: ["scopeCount", "matches"], referenceParams: [],
   },
   "styles.statusFieldsn1": {
     message: "{scopeCount} relationship fields · {matches} result",
     context: "Settings, style editors, and manager copy.",
-    params: ["scopeCount", "matches"],
+    params: ["scopeCount", "matches"], referenceParams: [],
   },
   "styles.statusFieldsnn": {
     message: "{scopeCount} relationship fields · {matches} results",
     context: "Settings, style editors, and manager copy.",
-    params: ["scopeCount", "matches"],
+    params: ["scopeCount", "matches"], referenceParams: [],
   },
   "settings.unassignedStatus11": {
     message: "{count} unassigned field · {results} result",
     context: "Settings, style editors, and manager copy.",
-    params: ["count", "results"],
+    params: ["count", "results"], referenceParams: [],
   },
   "settings.unassignedStatus1n": {
     message: "{count} unassigned field · {results} results",
     context: "Settings, style editors, and manager copy.",
-    params: ["count", "results"],
+    params: ["count", "results"], referenceParams: [],
   },
   "settings.unassignedStatusn1": {
     message: "{count} unassigned fields · {results} result",
     context: "Settings, style editors, and manager copy.",
-    params: ["count", "results"],
+    params: ["count", "results"], referenceParams: [],
   },
   "settings.unassignedStatusnn": {
     message: "{count} unassigned fields · {results} results",
     context: "Settings, style editors, and manager copy.",
-    params: ["count", "results"],
+    params: ["count", "results"], referenceParams: [],
   },
   "settings.occurrenceOne": {
     message: "{count} occurrence",
     context: "Settings, style editors, and manager copy.",
-    params: ["count"],
+    params: ["count"], referenceParams: [],
   },
   "settings.occurrenceMany": {
     message: "{count} occurrences",
     context: "Settings, style editors, and manager copy.",
-    params: ["count"],
+    params: ["count"], referenceParams: [],
   },
 
   "settings.ui.buy.me.a.coffee": {
@@ -4283,6 +4316,16 @@ export const englishCatalog = {
     context: "Declarative K-Plex settings page copy.",
     params: [],
   },
+  "settings.ui.allowRemoteNodeImages": {
+    message: "Allow remote node images",
+    context: "Explicit network permission in the node images settings group. Defaults off.",
+    params: [],
+  },
+  "settings.ui.allowRemoteNodeImages.help": {
+    message: "Displaying HTTP(S) thumbnails and node images contacts their host, which receives your IP address and the image URL. Off by default; vault images still work. Turning this off prevents new loads but cannot undo requests already sent.",
+    context: "Privacy disclosure for remote node imagery; separate from explicitly opening or embedding web pages.",
+    params: [],
+  },
   "settings.ui.image.link.shown.as.a.small.preview.before.the.node.labe": {
     message: "Image link shown as a small preview before the node label. Works with YAML or Dataview-style inline fields.",
     context: "Declarative K-Plex settings page copy.",
@@ -4552,13 +4595,13 @@ export const englishCatalog = {
     plural: { one: "{count} discovered field is not assigned to an ontology role. Search, sort and assign them from one compact list.", other: "{count} discovered fields are not assigned to an ontology role. Search, sort and assign them from one compact list." },
     countParam: "count",
     context: "Summary of discovered ontology fields that are not assigned.",
-    params: ["count"],
+    params: ["count"], referenceParams: [],
   },
   "styles.relationshipSettingsSummary": {
     plural: { one: "{count} custom relationship style. Search by property or filter by role.", other: "{count} custom relationship styles. Search by property or filter by role." },
     countParam: "count",
     context: "Settings summary for customized relationship-specific link styles.",
-    params: ["count"],
+    params: ["count"], referenceParams: [],
   },
 
   "styles.propertyValuePlaceholder": {
@@ -4579,17 +4622,17 @@ export const englishCatalog = {
   "graph.relatedNotePath": {
     message: "{label} — {path}",
     context: "Tooltip for a compact related-note item; label and path are vault content.",
-    params: ["label", "path"],
+    params: ["label", "path"], referenceParams: ["label","path"],
   },
   "graph.compactnessValue": {
     message: "Compactness {value}",
     context: "Tooltip for the graph compactness control with its current numeric value.",
-    params: ["value"],
+    params: ["value"], referenceParams: [],
   },
   "graph.columnCounts": {
     message: "{parent} parent / {child} child columns",
     context: "Tooltip for the graph parent/child column layout control.",
-    params: ["parent", "child"],
+    params: ["parent", "child"], referenceParams: [],
   },
 
   "explain.summaryHidden": {
@@ -4696,47 +4739,47 @@ export const englishCatalog = {
   "filter.validationUnknownPlexPosition": {
     message: "Unknown Plex position “{value}”. To match a relationship property such as working-on, use Relationship property in Simple view (edge.definition in Code view).",
     context: "Graph Lens validation error for an invalid edge.role value.",
-    params: ["value"],
+    params: ["value"], referenceParams: [],
   },
   "filter.validationUnknownRelationshipKind": {
     message: "Unknown relationship kind “{value}”. Use defined or inferred.",
     context: "Graph Lens validation error for an invalid edge.kind value.",
-    params: ["value"],
+    params: ["value"], referenceParams: [],
   },
   "filter.validationUnknownRelationshipDirection": {
     message: "Unknown relationship direction “{value}”. Use from, to, or both.",
     context: "Graph Lens validation error for an invalid edge.direction value.",
-    params: ["value"],
+    params: ["value"], referenceParams: [],
   },
   "filter.validationUnterminatedString": {
     message: "Unterminated string at character {position}",
     context: "Graph Lens Code-view parser error.",
-    params: ["position"],
+    params: ["position"], referenceParams: [],
   },
   "filter.validationInvalidNumber": {
     message: "Invalid number '{value}' at character {position}",
     context: "Graph Lens Code-view parser error.",
-    params: ["value", "position"],
+    params: ["value", "position"], referenceParams: [],
   },
   "filter.validationUnexpectedToken": {
     message: "Unexpected '{value}' at character {position}",
     context: "Graph Lens Code-view parser error.",
-    params: ["value", "position"],
+    params: ["value", "position"], referenceParams: [],
   },
   "filter.validationEmptyExpression": {
     message: "Expression is empty at character {position}",
     context: "Graph Lens Code-view parser error.",
-    params: ["position"],
+    params: ["position"], referenceParams: [],
   },
   "filter.validationExpectedToken": {
     message: "Expected {expected}, found '{found}' at character {position}",
     context: "Graph Lens Code-view parser error.",
-    params: ["expected", "found", "position"],
+    params: ["expected", "found", "position"], referenceParams: [],
   },
   "filter.validationExpectedTokenAtEnd": {
     message: "Expected {expected}, found 'end of expression' at character {position}",
     context: "Graph Lens Code-view parser error when input ends before the expected token.",
-    params: ["expected", "position"],
+    params: ["expected", "position"], referenceParams: [],
   },
   "filter.validationTokenIdentifier": {
     message: "identifier",
@@ -4771,42 +4814,42 @@ export const englishCatalog = {
   "filter.validationComparisonRightValue": {
     message: "The right side of a comparison must be a value at character {position}",
     context: "Graph Lens Code-view parser error.",
-    params: ["position"],
+    params: ["position"], referenceParams: [],
   },
   "filter.validationExpectedValue": {
     message: "Expected a value, found '{found}' at character {position}",
     context: "Graph Lens Code-view parser error.",
-    params: ["found", "position"],
+    params: ["found", "position"], referenceParams: [],
   },
   "filter.validationExpectedValueAtEnd": {
     message: "Expected a value, found 'end of expression' at character {position}",
     context: "Graph Lens Code-view parser error when input ends before a value.",
-    params: ["position"],
+    params: ["position"], referenceParams: [],
   },
   "filter.validationUnknownNamespace": {
     message: "Unknown namespace '{value}' at character {position}",
     context: "Graph Lens Code-view parser error.",
-    params: ["value", "position"],
+    params: ["value", "position"], referenceParams: [],
   },
   "filter.validationExpectedProperty": {
     message: "Expected a property after '{namespace}' at character {position}",
     context: "Graph Lens Code-view parser error.",
-    params: ["namespace", "position"],
+    params: ["namespace", "position"], referenceParams: [],
   },
   "filter.validationFunctionArgumentsValues": {
     message: "Function arguments must be values at character {position}",
     context: "Graph Lens Code-view parser error.",
-    params: ["position"],
+    params: ["position"], referenceParams: [],
   },
   "filter.validationUnknownFunction": {
     message: "Unknown function '{value}' at character {position}",
     context: "Graph Lens Code-view parser error.",
-    params: ["value", "position"],
+    params: ["value", "position"], referenceParams: [],
   },
   "filter.validationUnknownMethod": {
     message: "Unknown method '{value}' at character {position}",
     context: "Graph Lens Code-view parser error.",
-    params: ["value", "position"],
+    params: ["value", "position"], referenceParams: [],
   },
   "filter.validationInvalidExpression": {
     message: "Invalid expression",
@@ -4864,17 +4907,17 @@ export const englishCatalog = {
   "explain.fieldAtLine": {
     message: "{field} at line {line}",
     context: "Deletion/reference review label for an inline relationship field occurrence.",
-    params: ["field", "line"],
+    params: ["field", "line"], referenceParams: ["field"],
   },
   "explain.inlineRelationshipAtLine": {
     message: "Inline relationship at line {line}",
     context: "Deletion/reference review label for an inline relationship occurrence with no field name.",
-    params: ["line"],
+    params: ["line"], referenceParams: [],
   },
   "explain.linkAtLine": {
     message: "Link at line {line}",
     context: "Deletion/reference review label for a Markdown link occurrence.",
-    params: ["line"],
+    params: ["line"], referenceParams: [],
   },
 
   "app.useCentralNodeEditor": { message: "Use editor as central node", context: "Toolbar action that replaces the compact center thought with an embedded native Markdown view.", params: [] },
@@ -4925,7 +4968,7 @@ export const englishCatalog = {
   "vaultStats.video": { message: 'Video', context: "K-Plex node, vault summary, and open-target UI copy.", params: [] },
   "vaultStats.otherAttachments": { message: 'Other attachments', context: "K-Plex node, vault summary, and open-target UI copy.", params: [] },
   "vaultStats.ontology": { message: 'Ontology keywords', context: "K-Plex node, vault summary, and open-target UI copy.", params: [] },
-  "vaultStats.ontologyValue": { message: '{total} total · {used} used', context: "K-Plex node, vault summary, and open-target UI copy.", params: ["total", "used"] },
+  "vaultStats.ontologyValue": { message: '{total} total · {used} used', context: "K-Plex node, vault summary, and open-target UI copy.", params: ["total", "used"], referenceParams: [] },
   "graph.configureLayout": { message: "Configure Plex layout", context: "Bottom-left toggle that mounts or unmounts the four density/column sliders.", params: [] },
   "hotkeys.heading": { message: "Internal hotkeys", context: "Plex-local keyboard navigation and shortcut configuration.", params: [] },
   "hotkeys.description": { message: "Configure shortcuts for the focused Plex in normal mode. Editors, search fields and dialogs keep their own keys.", context: "Plex-local keyboard navigation and shortcut configuration.", params: [] },
@@ -4939,13 +4982,13 @@ export const englishCatalog = {
   "hotkeys.sectionRight": { message: "Move to section on the right", context: "Plex-local keyboard navigation and shortcut configuration.", params: [] },
   "hotkeys.activate": { message: "Focus selected node / rename center", context: "Plex-local keyboard navigation and shortcut configuration.", params: [] },
   "hotkeys.disabled": { message: "Disabled", context: "Plex-local keyboard navigation and shortcut configuration.", params: [] },
-  "hotkeys.change": { message: "Change hotkey for {action}", context: "Plex-local keyboard navigation and shortcut configuration.", params: ["action"] },
+  "hotkeys.change": { message: "Change hotkey for {action}", context: "Plex-local keyboard navigation and shortcut configuration.", params: ["action"], referenceParams: [] },
   "hotkeys.disable": { message: "Disable", context: "Plex-local keyboard navigation and shortcut configuration.", params: [] },
   "hotkeys.reset": { message: "Reset", context: "Plex-local keyboard navigation and shortcut configuration.", params: [] },
   "hotkeys.pressKeys": { message: "Press keys…", context: "Plex-local keyboard navigation and shortcut configuration.", params: [] },
   "hotkeys.rowHelp": { message: "Select + to record a shortcut, × to disable it, or the restore icon to reset it. Escape cancels recording.", context: "Plex-local keyboard navigation and shortcut configuration.", params: [] },
-  "hotkeys.conflict": { message: "Already assigned to {action}. Disable or change that binding first.", context: "Plex-local keyboard navigation and shortcut configuration.", params: ["action"] },
-  "hotkeys.selection": { message: "Selected node: {label}", context: "Plex-local keyboard navigation and shortcut configuration.", params: ["label"] },
+  "hotkeys.conflict": { message: "Already assigned to {action}. Disable or change that binding first.", context: "Plex-local keyboard navigation and shortcut configuration.", params: ["action"], referenceParams: [] },
+  "hotkeys.selection": { message: "Selected node: {label}", context: "Plex-local keyboard navigation and shortcut configuration.", params: ["label"], referenceParams: ["label"] },
   "hotkeys.space": { message: "Space", context: "Visible key name in the internal shortcut recorder.", params: [] },
 } as const;
 

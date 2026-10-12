@@ -2,6 +2,7 @@
  * German translations for all K-Plex-owned user-facing copy.
  *
  * Product names, persisted identifiers and vault content are intentionally not translated here.
+ * Source metadata owns literal reference quoting; tag values include their # prefix.
  */
 import { buildLocaleCatalog, type LocaleTranslationMap } from "./catalog";
 
@@ -278,7 +279,7 @@ const germanTranslations = {
   "notice.sidepanelUnavailable": "Der Obsidian-Seitenbereich ist in diesem Arbeitsbereich nicht verfügbar.",
   "notice.popoutUnavailable": "Pop-out-Fenster sind auf dieser Plattform nicht verfügbar.",
   "notice.folder": "Ordner: {name}",
-  "notice.tag": "Tag: #{name}",
+  "notice.tag": "Tag: {name}",
   "notice.openPluginSettings": "Öffnen Sie Einstellungen → Community-Erweiterungen → K-Plex.",
   "notice.selectedNoteNotIndexed": "Die ausgewählte Notiz ist noch nicht im K-Plex-Index.",
   "notice.alreadyConnected": "Diese Knoten sind über dieses Tor bereits verbunden.",

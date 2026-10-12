@@ -2,6 +2,7 @@
  * Russian translations for all K-Plex-owned user-facing copy.
  *
  * Product names, persisted identifiers and vault content are intentionally not translated here.
+ * Source metadata owns literal reference quoting; tag values include their # prefix.
  */
 import { buildLocaleCatalog, type LocaleTranslationMap } from "./catalog";
 
@@ -280,7 +281,7 @@ const russianTranslations = {
   "notice.sidepanelUnavailable": "Боковая панель Obsidian недоступна в этом рабочем пространстве.",
   "notice.popoutUnavailable": "Отдельные окна недоступны на этой платформе.",
   "notice.folder": "Папка: {name}",
-  "notice.tag": "Тег: #{name}",
+  "notice.tag": "Тег: {name}",
   "notice.openPluginSettings": "Откройте Настройки → Сторонние плагины → K-Plex.",
   "notice.selectedNoteNotIndexed": "Выбранной заметки ещё нет в индексе K-Plex.",
   "notice.alreadyConnected": "Эти узлы уже соединены через этот порт.",

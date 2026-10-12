@@ -1,12 +1,13 @@
 /**
  * Portable relationship reconciliation and explanations derived from source evidence. Date-only
  * definitions retain their Date reason instead of implying configured wiki-link ontology. Semantic
- * roles and reason codes remain independent of layout, host APIs and language.
+ * roles and reason codes remain independent of layout, host APIs and language. Every resolution
+ * path delegates direction aggregation to the canonical active defined-evidence tier.
  */
 import { RelationType, type ResolverTarget, type Role, type SemanticRelation } from "./relations";
 import {
   RelationEvidenceStore,
-  applyEvidenceToRelation,
+  applyEvidenceDecisionsToRelation,
   applyOntologyPrecedence,
   emptyRelation,
   type EvidenceDecision,
@@ -134,7 +135,7 @@ export function resolveEvidencePairByKey<TPage extends ResolverKeyTarget<TPage>>
     return;
   }
   const relation: SemanticRelation<TPage> = { ...emptyRelation<TPage>(), target: canonicalTarget?.(targetKey, target) ?? target };
-  for (const decision of applyOntologyPrecedence(evidence)) applyEvidenceToRelation(relation, decision);
+  applyEvidenceDecisionsToRelation(relation, applyOntologyPrecedence(evidence));
   if (relationHasRole(relation)) source.neighbours.set(targetKey, relation);
   else source.neighbours.delete(targetKey);
 }
@@ -149,7 +150,7 @@ export function resolveEvidenceStoreByKey<TPage extends ResolverKeyTarget<TPage>
     const target = pages.get(targetKey);
     if (!source || !target) continue;
     const relation: SemanticRelation<TPage> = { ...emptyRelation<TPage>(), target };
-    for (const decision of applyOntologyPrecedence(evidence)) applyEvidenceToRelation(relation, decision);
+    applyEvidenceDecisionsToRelation(relation, applyOntologyPrecedence(evidence));
     if (relationHasRole(relation)) source.neighbours.set(targetKey, relation);
   }
 }
@@ -205,7 +206,7 @@ export async function resolveEvidenceStoreCooperativeByKey<TPage extends Resolve
     const target = pages.get(targetKey);
     if (source && target) {
       const relation: SemanticRelation<TPage> = { ...emptyRelation<TPage>(), target };
-      for (const decision of applyOntologyPrecedence(evidence)) applyEvidenceToRelation(relation, decision);
+      applyEvidenceDecisionsToRelation(relation, applyOntologyPrecedence(evidence));
       if (relationHasRole(relation)) source.neighbours.set(targetKey, relation);
     }
     processed += 1;

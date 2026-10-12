@@ -1,6 +1,7 @@
 /**
  * Portable evidence storage and ontology precedence. Defined scalar dates retain their physical
- * source kind while sharing explicit frontmatter authority. Decisions carry stable suppression codes;
+ * source kind while sharing explicit frontmatter authority. Active defined relationships own arrow
+ * direction over inferred evidence without suppressing its roles or provenance. Decisions carry stable suppression codes;
  * callers own localized explanations, cooperative scheduling and publication. Exclusively private
  * working stores may adopt a bounded exact-child delta at their synchronous commit boundary;
  * published evidence still uses immutable fork/swap generations. Private URL preparation lazily
@@ -868,14 +869,15 @@ export const emptyRelation = <TTarget>(): Omit<SemanticRelation<TTarget>, "targe
   isPreviousFriend: false,
 });
 
-export function applyEvidenceToRelation<TTarget>(relation: SemanticRelation<TTarget>, decision: EvidenceDecision): void {
+/** Apply one active declaration's roles and optionally its direction; aggregate callers use the tier-aware helper below. */
+export function applyEvidenceToRelation<TTarget>(relation: SemanticRelation<TTarget>, decision: EvidenceDecision, includeDirection = true): void {
   if (!decision.active) return;
   const item = decision.evidence;
   if (item.role === "hidden") {
     relation.isHidden = true;
     return;
   }
-  relation.direction = directionToSet(relation.direction, item.direction);
+  if (includeDirection) relation.direction = directionToSet(relation.direction, item.direction);
   const definition = item.definition ?? item.fieldName;
   switch (item.role) {
     case "parent":
@@ -908,5 +910,19 @@ export function applyEvidenceToRelation<TTarget>(relation: SemanticRelation<TTar
       relation.nextFriendType = relationTypeToSet(relation.nextFriendType, item.relationType);
       relation.nextFriendTypeDefinition = concatDefinition(definition, relation.nextFriendTypeDefinition);
       break;
+  }
+}
+
+/**
+ * Apply the complete pair's decisions while combining direction only within its strongest active
+ * non-hidden tier. Suppressed inline declarations and hidden controls cannot select that tier.
+ * Every active role still contributes through the same accumulator, including inferred roles,
+ * definitions and legitimate reciprocal defined directions. The caller supplies a fresh relation.
+ */
+export function applyEvidenceDecisionsToRelation<TTarget>(relation: SemanticRelation<TTarget>, decisions: readonly EvidenceDecision[]): void {
+  const definedDirection = decisions.some(/** Only accepted relationship declarations can claim the authoritative tier. */ ({ active, evidence }) =>
+    active && evidence.role !== "hidden" && evidence.relationType === RelationType.DEFINED);
+  for (const decision of decisions) {
+    applyEvidenceToRelation(relation, decision, !definedDirection || decision.evidence.relationType === RelationType.DEFINED);
   }
 }

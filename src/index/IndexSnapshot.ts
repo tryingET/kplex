@@ -1,9 +1,11 @@
 /**
  * Serializes K-Plex semantic snapshots and captures physical vault inventory for startup
- * reconciliation. Callers own storage, hydration and publication lifetimes.
+ * reconciliation. Cached direction rows carry the canonical resolver policy marker; legacy rows
+ * reuse their retained evidence through cooperative resolution. Callers own storage, hydration and publication lifetimes.
  */
 import { TFile, TFolder, type App } from "obsidian";
 import { encodeIndexSettingsSignature } from "../core/graph/settingsPolicy";
+import { RESOLVED_DIRECTION_POLICY_VERSION } from "../core/graph/relations";
 import type { KplexSettings } from "../settings";
 import { LinkDirection, RelationType, type GraphPage, type Relation } from "../types";
 import { createGraphState, type GraphState } from "./GraphState";
@@ -54,6 +56,8 @@ export type PersistedPage = {
   semanticSignature?: string;
   /** Cached resolved neighbours. Optional so v1/early IndexedDB snapshots still migrate cleanly. */
   relations?: PersistedRelation[];
+  /** Resolver direction policy that produced the cached relations; absent in legacy snapshots. */
+  resolvedDirectionPolicyVersion?: number;
 };
 
 export type PersistedEvidenceDeclaration = EvidenceProvenance & {
@@ -192,6 +196,7 @@ const persistedRelationFromRelation = (targetPath: string, relation: Relation): 
   previousFriendTypeDefinition: relation.previousFriendTypeDefinition,
 });
 
+/** Serialize current-policy relations with their direction marker; physical metadata and neutral evidence retain their existing formats. */
 export function persistedPageFromGraphPage(page: GraphPage, semanticSignature?: string): PersistedPage {
   return {
     path: page.path,
@@ -208,6 +213,7 @@ export function persistedPageFromGraphPage(page: GraphPage, semanticSignature?: 
     styleTags: [...page.styleTags],
     maxLabelLength: page.maxLabelLength,
     ...(semanticSignature ? { semanticSignature } : {}),
+    resolvedDirectionPolicyVersion: RESOLVED_DIRECTION_POLICY_VERSION,
     relations: [...page.neighbours.entries()].map(([targetPath, relation]) => persistedRelationFromRelation(targetPath, relation)),
   };
 }
@@ -272,13 +278,12 @@ export function addPersistedPageToState(state: GraphState, saved: PersistedPage,
   state.lowercasePathMap.set(page.path.toLowerCase(), page.path);
 }
 
-/** Restore one already-resolved neighbour map without replaying the relationship truth table.
- * Evidence is restored separately for explainability/editing. */
+/** Restore current-policy neighbours; legacy/unsupported rows stay empty until retained evidence is resolved. */
 export function hydratePersistedPageRelations(state: GraphState, saved: PersistedPage): boolean {
-  if (!Array.isArray(saved.relations)) return false;
   const source = state.pages.get(saved.path);
+  source?.neighbours.clear();
+  if (!Array.isArray(saved.relations) || saved.resolvedDirectionPolicyVersion !== RESOLVED_DIRECTION_POLICY_VERSION) return false;
   if (!source) return true;
-  source.neighbours.clear();
   for (const persisted of saved.relations) {
     const target = state.pages.get(persisted.targetPath);
     if (!target) continue;

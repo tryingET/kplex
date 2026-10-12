@@ -1,0 +1,560 @@
+{
+  "status": "superseded-by-directional-consent-follow-up",
+  "issue": "https://github.com/zsviczian/kplex/issues/128",
+  "pullRequest": "https://github.com/zsviczian/kplex/pull/141",
+  "date": "2026-10-11",
+  "policy": {
+    "defaultRemoval": "Configured ontology YAML fields, including configured Hidden fields, for notes and placeholders.",
+    "otherProperties": "Keep unless exact displayed source/field receives fresh Remove or additive Hide consent.",
+    "body": "Markdown body links and inline ontology are preserved and their source locations remain navigable.",
+    "hide": "Preserve original links and append a configured Hidden declaration in the selected source note. Hidden is directional; the connection may remain visible from the opposite central note.",
+    "preferences": "Legacy do-not-ask-again applies only to physical trash confirmation.",
+    "coverage": "Finite currently indexed sources, explicitly disclosed as incomplete; cumulative decoded preview budget 8 MiB."
+  },
+  "source": {
+    "branch": "2026-10-11-issue-128-delete-cleanup-scope",
+    "head": "f0ce0467ecd0697247fd2e8360c72ad65e92da00",
+    "integrationSnapshot": "e30f85d412c334cf4f1327439ee8c8a4dba5ed6e",
+    "pendingMergeHead": "e30f85d412c334cf4f1327439ee8c8a4dba5ed6e",
+    "currentRemoteMainAtCapture": "e664f65f7f60aa92e67dcb42d847d2cece88cb82",
+    "uncommitted": true,
+    "note": "origin/main advanced independently through rename-identity PR139 during validation. This uncommitted checkpoint includes the already pending merge of the recorded integration snapshot, without deleting or modifying that later remote commit.",
+    "sha256": {
+      "CONTRIBUTING.md": "8d0d546eadff34f4a07538a6312e69b4a7d253cece39a9b8855eb1c55bb0db2d",
+      "README.md": "baa6a0adc4185ff478977d7dc6e7f53e773b104a12c3ac8e3c6976e4792e2f20",
+      "docs/ACTION_INVENTORY.md": "19c576fb1fb3bbf1fc0e0f075f19e99b70bb661ec43d42d7c1b3b07a1d20a8d8",
+      "package.json": "1e8c53b25ded250b55c1b390b6dd1cfc11a6ae1a0cec759c422ba3dd38dd531c",
+      "src/adapters/obsidian/sourceAcquisition.ts": "ae74132f407c10815d26b1d9c23ed4df0bb5a83eecfb19bdeff8c8e8220c7a8b",
+      "src/core/plex/actions.ts": "84a614c3a8ad82a84bd204c03862299ff604962fef4f888e63f596110a31ef88",
+      "src/index/GraphIndex.ts": "4f250e6ae22208b6c70fc4925085eb00d0f7c09ba8c41e76c6f4ecfcd7d3af4d",
+      "src/lang/catalog.ts": "061cc2621e4828208e636687f8d501c2c2bc4ba86aee5ffeef17eea26b19607a",
+      "src/lang/en.ts": "aa74aa6853a18a315af50db8e5414a32c488d44488bf98a435db98a715ead33f",
+      "src/main.ts": "918bfa10478832b5dc41af86d0abfcd7b0a896ea59ff59ee000d7e2ba1bba703",
+      "src/ui/DeleteNodeModal.ts": "3ae95100491de8b3d772bec0cd92cdc0c041ea7dea968a2b40964be048d55c23",
+      "src/ui/PlexGraph.tsx": "da70ddd267edbc6f475777ed420213ea0418263af3c05e6527abc37968b498ee",
+      "src/ui/RelationshipExplanationModal.ts": "d8ae20f35b1ddaac574492174f092310a68443a99a2ce048663562dc6f7e82e1",
+      "tests/action-host-integration.test.mjs": "b2494e6dcf7c73e1099b896dc9188eeeeeb6576b179ec06f830d1208789da129",
+      "tests/indexing.test.mjs": "94a0a4d56cee58217d72fe2cd8a8415f6448168fc2a5588c570b71143145358d",
+      "tests/relationship-source-removal.test.mjs": "158fc818f7e58aa5577a4faea3749392410f86922321627ffa24d634bd2c3bdb",
+      "tests/source-startup-indexeddb.test.mjs": "568107181eeb35e53741afcbf64ce47aa7d4a91e83031eb4f84a7f5d9970f03e",
+      "scripts/testing/obsidian/deleteCleanup.mjs": "729a0dd561ac7086fd67b35d075409b037064d008c26a527671eeeef0f6e21c4"
+    },
+    "currentRemoteMainAtAcceptance": "e664f65f7f60aa92e67dcb42d847d2cece88cb82"
+  },
+  "environment": {
+    "node": "v22.22.2",
+    "platform": "win32 10.0.26200",
+    "obsidian": "1.14.4 (installer 1.14.0)",
+    "pluginVersion": "0.1.2",
+    "dependencies": {
+      "obsidian": "1.13.0",
+      "typescript": "5.9.3",
+      "esbuild": "0.25.5",
+      "react": "19.3.0",
+      "react-dom": "19.3.0",
+      "eslint": "9.39.5",
+      "eslint-plugin-obsidianmd": "0.4.2"
+    }
+  },
+  "artifactSha256": {
+    "main.js": "40195472bd0c3ba9b7392ef5a307f053de5e182b8af15287e74d18aebc88c720",
+    "styles.css": "e8c9279e8904888aa71d5dd2b01f320d5b32fd10e15feb0b9a9576a34f11cea3",
+    "manifest.json": "0beacdb94adc4a0ec318d69dba87fcb4dc9c1a86784058db341fdefe0dfb4250"
+  },
+  "nativeAcceptance": {
+    "command": "node scripts/testing/obsidian/deleteCleanup.mjs",
+    "receipt": "C:/Users/viczi/AppData/Local/Temp/kplex-delete-native12-20261011/report.json",
+    "status": "passed",
+    "startedAt": "2026-10-11T20:11:36.579Z",
+    "finishedAt": "2026-10-11T20:11:50.980Z",
+    "driverSha256": "729a0dd561ac7086fd67b35d075409b037064d008c26a527671eeeef0f6e21c4",
+    "vault": "kplex-test-small",
+    "cases": [
+      {
+        "id": "default-ontology-and-inline-navigation",
+        "status": "passed",
+        "outcome": "committed",
+        "survivingProperties": [
+          "arbitrary",
+          "list",
+          "nested"
+        ],
+        "lastActivePath": "__kplex_delete_cleanup_native/default-other.md"
+      },
+      {
+        "id": "legacy-preference-preserves-property-only-ghost",
+        "status": "passed",
+        "outcome": "committed"
+      },
+      {
+        "id": "resolved-short-ontology-captured-and-body-references-kept",
+        "status": "passed",
+        "outcome": "committed"
+      },
+      {
+        "id": "cancel-no-write",
+        "status": "passed"
+      },
+      {
+        "id": "explicit-extra-field-removal",
+        "status": "passed",
+        "outcome": "committed"
+      },
+      {
+        "id": "delete-hide-preserves-links",
+        "status": "passed",
+        "outcome": "committed"
+      },
+      {
+        "id": "placeholder-default-scope",
+        "status": "passed",
+        "outcome": "committed"
+      },
+      {
+        "id": "hidden-is-configured-ontology",
+        "status": "passed",
+        "outcome": "committed"
+      },
+      {
+        "id": "partial-source-failure-keeps-evidence",
+        "status": "passed",
+        "outcome": "committed"
+      },
+      {
+        "id": "confirmation-target-replacement-refused",
+        "status": "passed"
+      },
+      {
+        "id": "native-await-source-replacement-refused",
+        "status": "passed",
+        "outcome": "committed"
+      },
+      {
+        "id": "post-trash-target-recreation-refused",
+        "status": "passed",
+        "outcome": "committed"
+      },
+      {
+        "id": "context-hide-cancel-preserves-source",
+        "status": "passed"
+      },
+      {
+        "id": "context-hide-keeps-original-links-and-note",
+        "status": "passed"
+      },
+      {
+        "id": "plugin-reload-cancels-pending-delete-consent",
+        "status": "passed"
+      },
+      {
+        "id": "warm:property-only",
+        "status": "passed",
+        "targetPath": "__kplex_delete_cleanup_native/property-only-target",
+        "sourcePath": "__kplex_delete_cleanup_native/property-only-owner.md",
+        "hidden": false
+      },
+      {
+        "id": "warm:delete-hide",
+        "status": "passed",
+        "targetPath": "__kplex_delete_cleanup_native/delete-hide-target",
+        "sourcePath": "__kplex_delete_cleanup_native/delete-hide-owner.md",
+        "hidden": true
+      },
+      {
+        "id": "warm:context-hide",
+        "status": "passed",
+        "targetPath": "__kplex_delete_cleanup_native/context-hide-target.md",
+        "sourcePath": "__kplex_delete_cleanup_native/context-hide-owner.md",
+        "hidden": true
+      }
+    ],
+    "nativeErrors": "No errors captured.",
+    "cleanup": {
+      "cleaned": true,
+      "markdownFiles": 88,
+      "pluginEnabled": true
+    },
+    "configurationCaptured": true,
+    "configurationRestored": true,
+    "configurationBefore": [
+      {
+        "name": "data.json.before",
+        "sha256": "0d76b284f406cb83ead05b980130e4617c0f72319c4c54cee6699ee932ffe40f"
+      },
+      {
+        "name": "community-plugins.json.before",
+        "sha256": "4ac827989c179ea6dba2e5a878462085dc86e40328300b1b018fb91d466cbc35"
+      }
+    ]
+  },
+  "fullVerification": {
+    "command": "node scripts/testing/obsidian/verify.mjs",
+    "receipt": "C:/Users/viczi/AppData/Local/Temp/kplex-delete-full-final-20261011/report.json",
+    "log": "C:/Users/viczi/AppData/Local/Temp/kplex-delete-full-final-20261011.log",
+    "status": "passed",
+    "startedAt": "2026-10-11T20:12:12.372Z",
+    "completedAt": "2026-10-11T20:29:29.117Z",
+    "logSha256": "c4281c36cef1ffdcee12344a72a4815b213d07e3ef2061bc63c3732ccadbf3d0",
+    "summaries": [
+      {
+        "lane": "architecture",
+        "tests": 7,
+        "pass": 7,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      {
+        "lane": "core",
+        "tests": 92,
+        "pass": 92,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      {
+        "lane": "portable",
+        "tests": 700,
+        "pass": 700,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      {
+        "lane": "browser-ui",
+        "tests": 60,
+        "pass": 60,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      {
+        "lane": "portable-sources",
+        "tests": 334,
+        "pass": 334,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      {
+        "lane": "browser-indexeddb-sources",
+        "tests": 434,
+        "pass": 434,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    ],
+    "architecture": {
+      "migratedRoots": 104,
+      "reachableFiles": 189,
+      "violations": 0
+    },
+    "officialObsidianLint": "passed",
+    "actualInstalledTypesProductionBuild": "passed",
+    "indexingFixture": "All production fixture assertions and settings independence24 scenarios passed.",
+    "receiptData": {
+      "schemaVersion": 1,
+      "status": "passed",
+      "startedAt": "2026-10-11T20:12:12.372Z",
+      "source": {
+        "revision": "f0ce0467ecd0697247fd2e8360c72ad65e92da00",
+        "dirty": true,
+        "node": "v22.22.2",
+        "os": "win32 10.0.26200"
+      },
+      "target": {
+        "vaultName": "kplex-test-small",
+        "vaultPath": "C:\\Obsidian\\kplex-test-small",
+        "configDir": "C:\\Obsidian\\kplex-test-small\\.obsidian"
+      },
+      "capabilities": {
+        "version": "1.14.4 (installer 1.14.0)",
+        "commands": [
+          "version",
+          "vault",
+          "plugin:disable",
+          "plugin:enable",
+          "commands",
+          "command",
+          "dev:dom",
+          "dev:errors"
+        ]
+      },
+      "artifacts": {
+        "sourceHashes": {
+          "main.js": "40195472bd0c3ba9b7392ef5a307f053de5e182b8af15287e74d18aebc88c720",
+          "manifest.json": "0beacdb94adc4a0ec318d69dba87fcb4dc9c1a86784058db341fdefe0dfb4250",
+          "styles.css": "e8c9279e8904888aa71d5dd2b01f320d5b32fd10e15feb0b9a9576a34f11cea3"
+        },
+        "pluginVersion": "0.1.2",
+        "stagedHashes": {
+          "main.js": "40195472bd0c3ba9b7392ef5a307f053de5e182b8af15287e74d18aebc88c720",
+          "manifest.json": "0beacdb94adc4a0ec318d69dba87fcb4dc9c1a86784058db341fdefe0dfb4250",
+          "styles.css": "e8c9279e8904888aa71d5dd2b01f320d5b32fd10e15feb0b9a9576a34f11cea3"
+        }
+      },
+      "scenarios": [
+        {
+          "id": "open-kplex",
+          "status": "passed",
+          "assertions": [
+            "plugin command registered",
+            "rendered .kplex-app contains K-Plex",
+            "no captured JavaScript errors"
+          ],
+          "elapsedMs": 334
+        }
+      ],
+      "completedAt": "2026-10-11T20:29:29.117Z"
+    },
+    "artifactsIdenticalToNativeAcceptance": true,
+    "postGateCleanup": {
+      "markdownFiles": 88,
+      "pluginEnabled": true,
+      "ownedFolder": false,
+      "ownedController": false,
+      "ownedModal": false
+    }
+  },
+  "developmentFindings": [
+    {
+      "problem": "First full browser gate reproduced A.md being read twice at startup.",
+      "fix": "Yield at the existing background priority checkpoint after durable host inventory I/O, before restart ownership comparison, preserving current-revision fences.",
+      "regression": "Deterministic P4 captures old durable metadata while P2 current body parser is held: baseline reacquires A.md twice, corrected checkpoint passes. New during-parser startup case and existing offline-edit cases passed in the complete 434-case browser lane; affected focused76 passed earlier."
+    },
+    {
+      "problem": "Transient pair read facade retained an old target.file after canonical dematerialization.",
+      "fix": "Retire touched pair-facet cache keys before adopting a new get facade; confirmation fences canonical and native identities."
+    },
+    {
+      "problem": "Deletion Hide used a full.md coordinate while native generic unresolved link used full path without .md.",
+      "fix": "Capture proven pre-trash target spellings, then add exact observed native unresolved keys; preserve opaque coordinate identity and original source links."
+    },
+    {
+      "problem": "Physical Hide rejected refreshed pair facades despite unchanged canonical/native identities.",
+      "fix": "Fence the exact approved canonical/native incarnations while accepting refreshed read facades."
+    },
+    {
+      "problem": "Native Hidden save hung while P2 publication waited on its own outer P0 foreground lease.",
+      "fix": "Own pair readiness and native write in P0; release that lease before P2 replay, then publish the prepared pair independently.",
+      "regression": "Actual ForegroundWorkScheduler assertion verifies P0 is released at P2 checkpoint, committed outcome and zero residual active/waiting work. Final host integration 53/53 passed; final native context Hide committed."
+    }
+  ],
+  "priorNativeAttempts": [
+    {
+      "directory": "kplex-delete-native1-20261011-192300",
+      "status": "failed",
+      "startedAt": "2026-10-11T19:24:14.586Z",
+      "finishedAt": "2026-10-11T19:24:20.204Z",
+      "passedCases": 0,
+      "error": "AssertionError [ERR_ASSERTION]: Error: Default retained configured ontology\n    at check (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:10:111)\n    at eval (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:216:5)\n    at waitTask (file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:393:23)\n    at async file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:410:81",
+      "cleanup": {
+        "cleaned": true,
+        "markdownFiles": 88,
+        "pluginEnabled": true
+      },
+      "configurationRestored": true
+    },
+    {
+      "directory": "kplex-delete-native10-20261011-201000",
+      "status": "failed",
+      "startedAt": "2026-10-11T19:48:32.606Z",
+      "finishedAt": "2026-10-11T19:48:39.370Z",
+      "passedCases": 5,
+      "error": "AssertionError [ERR_ASSERTION]: Error: Delete Hide did not suppress pair\n    at check (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:10:111)\n    at eval (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:284:45)\n    at waitTask (file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:413:23)\n    at async file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:430:81",
+      "cleanup": {
+        "cleaned": true,
+        "markdownFiles": 88,
+        "pluginEnabled": true
+      },
+      "configurationRestored": true
+    },
+    {
+      "directory": "kplex-delete-native11-20261011-203000",
+      "status": "failed",
+      "startedAt": "2026-10-11T20:01:07.302Z",
+      "finishedAt": "2026-10-11T20:03:46.631Z",
+      "passedCases": 13,
+      "error": "AssertionError [ERR_ASSERTION]: Error: Native context Hide operation did not settle\n    at check (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:10:111)\n    at until (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:14:95)\n    at async hideFromContext (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:144:7)\n    at async eval (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:354:5)\n    at waitTask (file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:420:23)\n    at async file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:437:81",
+      "cleanupError": "AssertionError [ERR_ASSERTION]: Native deletion cleanup deadline exceeded\n    at file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:452:9",
+      "configurationRestored": true
+    },
+    {
+      "directory": "kplex-delete-native12-20261011",
+      "status": "passed",
+      "startedAt": "2026-10-11T20:11:36.579Z",
+      "finishedAt": "2026-10-11T20:11:50.980Z",
+      "passedCases": 18,
+      "cleanup": {
+        "cleaned": true,
+        "markdownFiles": 88,
+        "pluginEnabled": true
+      },
+      "configurationRestored": true
+    },
+    {
+      "directory": "kplex-delete-native2-20261011-192700",
+      "status": "failed",
+      "startedAt": "2026-10-11T19:26:55.013Z",
+      "finishedAt": "2026-10-11T19:26:55.420Z",
+      "passedCases": 0,
+      "error": "Error: Error: Clean native prerequisites required\n\n    at cli (file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:35:100)\n    at evaluate (file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:39:45)\n    at file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:428:3\n    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)",
+      "configurationRestored": true
+    },
+    {
+      "directory": "kplex-delete-native3-20261011-193000",
+      "status": "failed",
+      "startedAt": "2026-10-11T19:29:18.793Z",
+      "finishedAt": "2026-10-11T19:29:24.415Z",
+      "passedCases": 0,
+      "error": "AssertionError [ERR_ASSERTION]: Error: Default retained configured ontology\n    at check (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:10:111)\n    at eval (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:241:5)\n    at waitTask (file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:419:23)\n    at async file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:436:81",
+      "cleanup": {
+        "cleaned": true,
+        "markdownFiles": 88,
+        "pluginEnabled": true
+      },
+      "configurationRestored": true
+    },
+    {
+      "directory": "kplex-delete-native4-20261011-193500",
+      "status": "failed",
+      "startedAt": "2026-10-11T19:34:37.529Z",
+      "finishedAt": "2026-10-11T19:34:42.184Z",
+      "passedCases": 0,
+      "error": "AssertionError [ERR_ASSERTION]: Error: Default retained configured ontology\n    at check (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:10:111)\n    at eval (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:249:5)\n    at waitTask (file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:427:23)\n    at async file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:444:81",
+      "cleanup": {
+        "cleaned": true,
+        "markdownFiles": 88,
+        "pluginEnabled": true
+      },
+      "configurationRestored": true
+    },
+    {
+      "directory": "kplex-delete-native5-20261011-194000",
+      "status": "failed",
+      "startedAt": "2026-10-11T19:36:09.846Z",
+      "finishedAt": "2026-10-11T19:36:13.877Z",
+      "passedCases": 0,
+      "error": "AssertionError [ERR_ASSERTION]: Error: Default retained configured ontology\n    at check (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:10:111)\n    at eval (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:255:5)\n    at waitTask (file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:433:23)\n    at async file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:450:81",
+      "cleanup": {
+        "cleaned": true,
+        "markdownFiles": 88,
+        "pluginEnabled": true
+      },
+      "configurationRestored": true
+    },
+    {
+      "directory": "kplex-delete-native6-20261011-195100",
+      "status": "failed",
+      "startedAt": "2026-10-11T19:41:30.828Z",
+      "finishedAt": "2026-10-11T19:41:35.448Z",
+      "passedCases": 1,
+      "error": "AssertionError [ERR_ASSERTION]: Error: Retained property evidence vanished\n    at check (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:10:111)\n    at ghost (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:156:5)\n    at async eval (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:243:5)\n    at waitTask (file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:406:23)\n    at async file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:423:81",
+      "cleanup": {
+        "cleaned": true,
+        "markdownFiles": 88,
+        "pluginEnabled": true
+      },
+      "configurationRestored": true
+    },
+    {
+      "directory": "kplex-delete-native7-20261011-195500",
+      "status": "failed",
+      "startedAt": "2026-10-11T19:44:42.835Z",
+      "finishedAt": "2026-10-11T19:44:47.475Z",
+      "passedCases": 1,
+      "error": "AssertionError [ERR_ASSERTION]: Error: Retained property evidence vanished\n    at check (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:10:111)\n    at ghost (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:159:5)\n    at async eval (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:246:5)\n    at waitTask (file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:410:23)\n    at async file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:427:81",
+      "cleanup": {
+        "cleaned": true,
+        "markdownFiles": 88,
+        "pluginEnabled": true
+      },
+      "configurationRestored": true
+    },
+    {
+      "directory": "kplex-delete-native8-20261011-200000",
+      "status": "failed",
+      "startedAt": "2026-10-11T19:45:55.287Z",
+      "finishedAt": "2026-10-11T19:45:59.950Z",
+      "passedCases": 1,
+      "error": "AssertionError [ERR_ASSERTION]: Error: Ghost pair publication unavailable\n    at check (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:10:111)\n    at ghost (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:156:5)\n    at async eval (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:249:5)\n    at waitTask (file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:413:23)\n    at async file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:430:81",
+      "cleanup": {
+        "cleaned": true,
+        "markdownFiles": 88,
+        "pluginEnabled": true
+      },
+      "configurationRestored": true
+    },
+    {
+      "directory": "kplex-delete-native9-20261011-200500",
+      "status": "failed",
+      "startedAt": "2026-10-11T19:47:07.197Z",
+      "finishedAt": "2026-10-11T19:47:13.075Z",
+      "passedCases": 2,
+      "error": "AssertionError [ERR_ASSERTION]: Error: Short body/plain-inline navigation disappeared after trash\n    at check (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:10:111)\n    at eval (eval at <anonymous> (eval at <anonymous> (app://obsidian.md/app.js:1:1638663)), <anonymous>:260:5)\n    at waitTask (file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:414:23)\n    at async file:///C:/Users/viczi/GitHub/kplex/scripts/testing/obsidian/deleteCleanup.mjs:431:81",
+      "cleanup": {
+        "cleaned": true,
+        "markdownFiles": 88,
+        "pluginEnabled": true
+      },
+      "configurationRestored": true
+    }
+  ],
+  "recoveryLimitation": {
+    "receipt": "C:/Users/viczi/AppData/Local/Temp/kplex-delete-native11-20261011-203000/recovery.json",
+    "detail": "Failed deadlocked attempt was released through native plugin reload and owned cleanup rerun: original 88 notes, no fixture folder/modal and original runtime settings equal persisted JSON. That older driver restored and compared original raw buffers before reload, but did not persist them; post-reload byte comparison cannot be reconstructed. Final accepted driver captures persistent raw backups after startup and verifies exact restoration."
+  },
+  "limitations": [
+    "Native Windows DOM activation establishes main-window semantics and reload, not physical phone/tablet touch, macOS or popout lifecycle.",
+    "Indexed-source preview cannot promise all vault references.",
+    "Failure after earlier source writes preserves those writes and reports partial/manual review; no rollback promise.",
+    "The newer remote rename-identity commit is outside the already pending merge snapshot; integrate it before publishing this checkpoint. This report does not claim verification of that combined future tree."
+  ],
+  "manualRecommendations": [
+    {
+      "priority": 1,
+      "workflow": "Physical phone: delete a note with ontology and arbitrary properties; use Keep/Remove/Hide and source Open.",
+      "expected": "Controls remain labeled and operable, extra-field changes require fresh consent, body links remain unchanged.",
+      "reason": "Desktop emulation and native Windows DOM activation do not prove touch or phone WebView behavior."
+    },
+    {
+      "priority": 2,
+      "workflow": "Popout: open connector details, cancel and confirm Hide, then close/popout-migrate the view.",
+      "expected": "Correct owning modal, original file links retained, selected source direction hidden and no pending consent after view/plugin teardown; the opposite center may retain its inline relationship.",
+      "reason": "Current native acceptance is main-window Windows plus plugin reload."
+    }
+  ],
+  "acceptedAt": "2026-10-11T20:31:23.439Z",
+  "firstFullGate": {
+    "receipt": "C:/Users/viczi/AppData/Local/Temp/kplex-delete-full-20261011-190600/report.json",
+    "status": "failed",
+    "startedAt": "2026-10-11T19:05:23.225Z",
+    "completedAt": "2026-10-11T19:20:38.003Z",
+    "browserSources": {
+      "pass": 432,
+      "fail": 1,
+      "total": 433
+    },
+    "failure": "Existing offline-edit startup assertion read A.md twice.",
+    "resolution": "Existing background checkpoint after durable inventory await plus deterministic P4/P2 regression; final complete 434-case lane passed with zero skips.",
+    "waiver": false
+  },
+  "followUp": {
+    "report": "docs/validation/hidden-direction-2026-10-11.json",
+    "reason": "Maintainer reproduced reverse inline visibility and misleading selected-save-note behavior. Previous native18 assertions established the selected direction only; the claimed both-direction policy was not demonstrated. Canonical semantics are intentionally directional. Follow-up corrects live consent and adds actual inverse-center acceptance; prior passing receipts remain identified as previous artifacts, not current follow-up acceptance.",
+    "status": "accepted-uncommitted",
+    "nativeCases": 20,
+    "finalArtifactSha256": {
+      "main.js": "7876862e94bfade92795bc64643e3e8cafdadcae4cffbd7b28881bd6b1db9638",
+      "styles.css": "e8c9279e8904888aa71d5dd2b01f320d5b32fd10e15feb0b9a9576a34f11cea3",
+      "manifest.json": "0beacdb94adc4a0ec318d69dba87fcb4dc9c1a86784058db341fdefe0dfb4250"
+    }
+  }
+}

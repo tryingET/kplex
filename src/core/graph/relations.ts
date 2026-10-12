@@ -11,6 +11,9 @@ export enum LinkDirection {
   BOTH = 3,
 }
 
+/** Resolved arrow tier policy; persisted relations without this marker must be rederived from retained evidence. */
+export const RESOLVED_DIRECTION_POLICY_VERSION = 1;
+
 export type Role = "parent" | "child" | "left" | "right" | "previous" | "next" | "sibling";
 export type RelationshipRole = Exclude<Role, "sibling">;
 

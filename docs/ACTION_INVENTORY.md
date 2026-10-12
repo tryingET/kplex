@@ -119,3 +119,5 @@ view closes its owned picker on unmount/migration. Cancel/retired callbacks neve
 Save preserves alpha, and a changed color follows the native Settings opaque-color policy and normal
 settings persistence/presentation refresh. No graph policy, storage schema or relationship data is
 introduced.
+
+The finite `relationship.hide` action is shared by connector context menus, Connection details and configurable graph commands. It always confirms an exact Markdown source and configured Hidden field, adds evidence through the existing metadata writer, preserves original source links and publishes one canonical source. File-delete confirmation preferences do not grant Hidden write consent.

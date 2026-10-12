@@ -2,6 +2,7 @@
  * Dutch translations for all K-Plex-owned user-facing copy.
  *
  * Product names, persisted identifiers and vault content are intentionally not translated here.
+ * Source metadata owns literal reference quoting; tag values include their # prefix.
  */
 import { buildLocaleCatalog, type LocaleTranslationMap } from "./catalog";
 
@@ -278,7 +279,7 @@ const dutchTranslations = {
   "notice.sidepanelUnavailable": "Het zijpaneel van Obsidian is niet beschikbaar in deze werkruimte.",
   "notice.popoutUnavailable": "Pop-outvensters zijn niet beschikbaar op dit platform.",
   "notice.folder": "Map: {name}",
-  "notice.tag": "Tag: #{name}",
+  "notice.tag": "Tag: {name}",
   "notice.openPluginSettings": "Open Instellingen → Community-plug-ins → K-Plex.",
   "notice.selectedNoteNotIndexed": "De geselecteerde notitie staat nog niet in de K-Plex-index.",
   "notice.alreadyConnected": "Deze knooppunten zijn al via deze poort verbonden.",

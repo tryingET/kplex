@@ -1,3 +1,8 @@
+/**
+ * Compiles the canonical portable evidence/resolver owner and compares the retained compatibility
+ * oracle plus explicit arrow-tier and directional Hidden/inverse-inline regressions. Finite doubles inject cooperative time/lifetime;
+ * temporary emitted modules are removed on exit and no native host behavior is claimed.
+ */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
@@ -255,6 +260,121 @@ function denseGraph(count) {
 }
 
 const canonicalNeighbours = (pages) => [...pages].map(([path, source]) => [path, [...source.neighbours].map(([target, relation]) => [target, cleanRelation(relation)])]);
+
+test("explicit Implements direction wins over reciprocal ordinary links from either center", () => {
+  const { DEFINED, INFERRED } = core.RelationType;
+  const { FROM, TO } = core.LinkDirection;
+  for (const explicitFirst of [true, false]) {
+    const store = new core.RelationEvidenceStore();
+    const explicit = () => store.addPair("A-Star.md", "Uniform Cost Search.md", "left", DEFINED, FROM,
+      { sourceKind: "frontmatter-ontology", fieldName: "Implements", definition: "implements" });
+    const ordinary = () => {
+      store.addPair("A-Star.md", "Uniform Cost Search.md", "child", INFERRED, FROM, { sourceKind: "obsidian-link" });
+      store.addPair("Uniform Cost Search.md", "A-Star.md", "child", INFERRED, FROM, { sourceKind: "obsidian-link" });
+    };
+    if (explicitFirst) { explicit(); ordinary(); } else { ordinary(); explicit(); }
+    const pages = new Map(["A-Star.md", "Uniform Cost Search.md"].map(path => [path, page(path)]));
+    core.resolveEvidenceStore(pages, store);
+    assert.equal(pages.get("A-Star.md").neighbours.get("Uniform Cost Search.md").direction, FROM);
+    assert.equal(pages.get("Uniform Cost Search.md").neighbours.get("A-Star.md").direction, TO);
+    assert.equal(store.declarationCount, 3, "inferred evidence remains retained");
+    const explanation = core.explainResolvedRelationship(pages.get("A-Star.md"), pages.get("Uniform Cost Search.md"),
+      store.between("A-Star.md", "Uniform Cost Search.md"), false);
+    assert.equal(explanation.decisions.length, 3);
+    assert(explanation.decisions.every(decision => decision.active), "direction precedence does not suppress role evidence");
+    assert.deepEqual(explanation.resolvedRoles, [{ role: "left", relationType: DEFINED }]);
+  }
+});
+
+test("direction tiers preserve every role, duplicate and provenance across full, pair and cooperative resolution", async () => {
+  const { DEFINED, INFERRED } = core.RelationType;
+  const { FROM, TO, BOTH } = core.LinkDirection;
+  for (const role of ["parent", "child", "left", "right", "previous", "next"]) {
+    for (const direction of [FROM, TO, BOTH]) {
+      for (const explicitFirst of [true, false]) {
+        const store = new core.RelationEvidenceStore();
+        const explicit = () => {
+          for (let duplicate = 0; duplicate < 2; duplicate++) store.addPair("A.md", "B.md", role, DEFINED, direction,
+            { sourceKind: "frontmatter-ontology", fieldName: "Explicit", rawValue: "[[B]]" });
+        };
+        const inferred = () => {
+          store.addPair("A.md", "B.md", "child", INFERRED, FROM, { sourceKind: "obsidian-link", line: 5 });
+          store.addPair("B.md", "A.md", "child", INFERRED, FROM, { sourceKind: "unresolved-link", line: 8 });
+        };
+        if (explicitFirst) { explicit(); inferred(); } else { inferred(); explicit(); }
+        const before = [...store.declarations()].map(cleanEvidence);
+        const full = new Map(["A.md", "B.md"].map(path => [path, page(path)]));
+        core.resolveEvidenceStore(full, store);
+        assert.equal(full.get("A.md").neighbours.get("B.md").direction, direction);
+        assert.equal(full.get("B.md").neighbours.get("A.md").direction, direction === BOTH ? BOTH : direction === FROM ? TO : FROM);
+        const pair = new Map(["A.md", "B.md"].map(path => [path, page(path)]));
+        core.resolveEvidencePair(pair, store, "A.md", "B.md");
+        core.resolveEvidencePair(pair, store, "B.md", "A.md");
+        assert.deepEqual(canonicalNeighbours(pair), canonicalNeighbours(full));
+        const cooperative = new Map(["A.md", "B.md"].map(path => [path, page(path)]));
+        assert.equal(await core.resolveEvidenceStoreCooperative(cooperative, store, {
+          now: () => 0, yield: async () => {}, isCurrent: () => true,
+        }), true);
+        assert.deepEqual(canonicalNeighbours(cooperative), canonicalNeighbours(full));
+        assert.deepEqual([...store.declarations()].map(cleanEvidence), before);
+        assert.equal(store.declarationCount, 4);
+        const relation = full.get("A.md").neighbours.get("B.md");
+        assert(relation.isParent && relation.isChild, "ordinary reciprocal role flags remain retained");
+        assert.equal(core.applyOntologyPrecedence(store.between("A.md", "B.md")).length, 4);
+      }
+    }
+  }
+});
+
+test("hidden and suppressed evidence cannot change direction tier; inferred-only and reciprocal defined retain BOTH", () => {
+  const { DEFINED, INFERRED } = core.RelationType;
+  const { FROM, TO, BOTH } = core.LinkDirection;
+  const store = new core.RelationEvidenceStore();
+  const pages = new Map(["A.md", "B.md"].map(path => [path, page(path)]));
+  store.addHidden("A.md", "B.md", { sourceKind: "frontmatter-ontology", fieldName: "Hidden" });
+  store.addPair("A.md", "B.md", "child", INFERRED, FROM, { sourceKind: "obsidian-link" });
+  core.resolveEvidenceStore(pages, store);
+  assert.equal(pages.get("A.md").neighbours.get("B.md").direction, FROM, "hidden DEFINED control must not suppress an inferred direction");
+  assert.equal(pages.get("A.md").neighbours.get("B.md").isHidden, true);
+  store.addPair("B.md", "A.md", "child", INFERRED, FROM, { sourceKind: "obsidian-link" });
+  core.resolveEvidenceStore(pages, store);
+  assert.equal(pages.get("A.md").neighbours.get("B.md").direction, BOTH);
+  store.addPair("A.md", "B.md", "left", DEFINED, FROM, { sourceKind: "frontmatter-ontology", fieldName: "Implements" });
+  store.addPair("A.md", "B.md", "child", DEFINED, TO, { sourceKind: "inline-ontology", fieldName: "Children", line: 2 });
+  core.resolveEvidenceStore(pages, store);
+  assert.equal(pages.get("A.md").neighbours.get("B.md").direction, FROM, "suppressed inline ontology cannot make BOTH");
+  const decisions = core.applyOntologyPrecedence(store.between("A.md", "B.md"));
+  assert.equal(decisions.filter(item => !item.active).length, 1);
+  assert.equal(decisions.find(item => !item.active).suppressionReason, core.ONTOLOGY_PRECEDENCE_SUPPRESSION);
+  store.addPair("B.md", "A.md", "left", DEFINED, FROM, { sourceKind: "frontmatter-ontology", fieldName: "Implements" });
+  core.resolveEvidenceStore(pages, store);
+  assert.equal(pages.get("A.md").neighbours.get("B.md").direction, BOTH, "reciprocal active definitions own BOTH");
+  assert.equal(pages.get("B.md").neighbours.get("A.md").direction, BOTH);
+  store.removeDeclarations(item => item.relationType === DEFINED && item.role !== "hidden");
+  core.resolveEvidencePair(pages, store, "A.md", "B.md");
+  assert.equal(pages.get("A.md").neighbours.get("B.md").direction, BOTH, "removing definitions reveals retained ordinary directions");
+});
+
+/** Selecting the writable declaring note changes only that center's Hidden flag; inverse inline evidence survives. */
+for (const declaringSource of ["Folder/A.md", "Folder/B.md"]) test(`Hidden saved in ${declaringSource} preserves the opposite inline connection`, () => {
+  const paths = ["Folder/A.md", "Folder/B.md"], store = new core.RelationEvidenceStore();
+  const pages = new Map(paths.map(path => [path, page(path)]));
+  const original = {sourceKind:"inline-ontology",fieldName:"Children",rawValue:"[[Folder/B.md]]",line:4};
+  store.addPair(paths[0],paths[1],"child",core.RelationType.DEFINED,core.LinkDirection.FROM,original);
+  const before = [...store.declarations()].map(cleanEvidence);
+  const other = paths.find(path => path !== declaringSource);
+  store.addHidden(declaringSource,other,{sourceKind:"frontmatter-ontology",fieldName:"Private"});
+  core.resolveEvidenceStore(pages,store);
+  const fromSelected = core.explainResolvedRelationship(pages.get(declaringSource),pages.get(other),store.between(declaringSource,other),false);
+  const fromOther = core.explainResolvedRelationship(pages.get(other),pages.get(declaringSource),store.between(other,declaringSource),false);
+  assert.equal(fromSelected.hidden,true,"Selected write note is the affected central note");
+  assert.equal(fromOther.hidden,false,"The inverse center receives no automatic Hidden declaration");
+  assert.equal(pages.get(other).neighbours.get(declaringSource).isHidden,false);
+  assert(fromOther.resolvedRoles.some(item => item.role === (other === paths[0] ? "child" : "parent")),"Retained inline relation stays visible from the other center");
+  assert(fromOther.decisions.some(item => item.active && item.evidence.sourceKind === "inline-ontology" && item.evidence.declaredByPath === paths[0]),"Inverse inline provenance survives unchanged");
+  assert.deepEqual([...store.declarations()].filter(item => item.role !== "hidden").map(cleanEvidence),before);
+  assert.equal(store.declarationCount,2,"A one-note choice adds one directional declaration");
+});
 
 test("C13b cooperative resolution uses the injected 7ms budget and matches full resolution", async () => {
   const sync = denseGraph(900);

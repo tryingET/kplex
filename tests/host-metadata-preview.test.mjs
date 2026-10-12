@@ -536,8 +536,8 @@ test("GraphIndex host availability renders direct relations over a physical base
   }
 });
 
-/** File events must retire provisional neighbor owners even before the semantic graph exists. */
-test("host-only rename/delete updates filename lookup and retires neighboring previews", async () => {
+/** Renames preserve coherent native reads while retiring builds; deletion retires the affected preview. */
+test("host-only rename remaps neighboring previews; delete retires them and filename lookup", async () => {
   const f = fixture(), originalWindow = globalThis.window;
   globalThis.window = { performance, performance, setTimeout, clearTimeout, setInterval, clearInterval };
   Object.assign(f.app.vault, { getName: () => "preview-lifetime", getFiles: () => [...f.files.values()] });
@@ -561,6 +561,8 @@ test("host-only rename/delete updates filename lookup and retires neighboring pr
     assert(index.get(f.centerPath).neighbours.has(created.path));
     const oldPath = "Notes/Parent.md", file = f.files.get(oldPath), oldHit = index.getVaultSearchPage(oldPath);
     assert(index.hostPreviewScopes.has(f.centerPath));
+    const priorScope = index.hostPreviewScopes.get(f.centerPath), priorPage = priorScope.pages.get(oldPath);
+    const priorAliases = [...priorPage.aliases], priorRequest = index.hostPreviewRequests.get(f.centerPath);
     f.files.delete(oldPath); file.path = "Notes/Renamed.md"; file.name = "Renamed.md"; file.basename = "Renamed";
     f.files.set(file.path, file); f.cache.set(file.path, f.cache.get(oldPath));
     f.app.metadataCache.resolvedLinks[file.path] = f.app.metadataCache.resolvedLinks[oldPath] ?? {};
@@ -570,7 +572,16 @@ test("host-only rename/delete updates filename lookup and retires neighboring pr
     assert.equal(index.search("Parent", 20, "vault-files").some(page => page.path === oldPath), false);
     assert.equal(index.getVaultSearchPage(oldPath), undefined);
     assert.equal(index.renameFile(oldPath, file), true, "filename-only rename is handled without full rebuild");
-    assert.equal(index.hostPreviewScopes.has(f.centerPath), false, "old endpoint retires neighboring scope");
+    const renamedScope = index.hostPreviewScopes.get(f.centerPath);
+    assert.equal(renamedScope, priorScope, "retain the coherent read owner until current source repair replaces it");
+    assert.equal(renamedScope.pages.has(oldPath), false, "old coordinate is retired inside the retained owner");
+    assert.equal(renamedScope.pages.get(file.path), priorPage, "native page identity survives rename");
+    assert.equal(priorPage.file, file); assert.equal(priorPage.path, file.path);
+    assert.deepEqual(priorPage.aliases, priorAliases, "rename preserves known alias facets");
+    assert.equal(index.get(f.centerPath).neighbours.has(oldPath), false);
+    assert.equal([...index.get(f.centerPath).neighbours.values()].filter(relation => relation.target.file === file).length, 1);
+    assert(index.hostPreviewRequests.get(f.centerPath) > priorRequest, "retire pending old-path preview build tokens");
+    assert.equal(index.isSemanticWriteReady(f.centerPath, file.path), false, "retained provisional reads cannot authorize source writes");
     assert.equal(index.physicalSearchEntries.has(oldPath), false);
     assert(index.search("Renamed", 20, "vault-files").some(page => page.path === file.path));
     assert.equal(index.getVaultSearchPage(file.path).file, file);

@@ -2,6 +2,7 @@
  * French translations for all K-Plex-owned user-facing copy.
  *
  * Product names, persisted identifiers and vault content are intentionally not translated here.
+ * Source metadata owns literal reference quoting; tag values include their # prefix.
  */
 import { buildLocaleCatalog, type LocaleTranslationMap } from "./catalog";
 
@@ -279,7 +280,7 @@ const frenchTranslations = {
   "notice.sidepanelUnavailable": "Le panneau latéral d’Obsidian n’est pas disponible dans cet espace de travail.",
   "notice.popoutUnavailable": "Les fenêtres détachées ne sont pas disponibles sur cette plateforme.",
   "notice.folder": "Dossier : {name}",
-  "notice.tag": "Balise : #{name}",
+  "notice.tag": "Balise : {name}",
   "notice.openPluginSettings": "Ouvrez Paramètres → Modules complémentaires de la communauté → K-Plex.",
   "notice.selectedNoteNotIndexed": "La note sélectionnée n’est pas encore dans l’index K-Plex.",
   "notice.alreadyConnected": "Ces nœuds sont déjà connectés par cette porte.",

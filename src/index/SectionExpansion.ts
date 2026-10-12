@@ -1,7 +1,8 @@
 /**
  * Host-side heading and transient section projection over indexed relationship evidence. Heading
  * slices retain physical LF/CRLF offsets to match native metadata positions. Transient explanation
- * codes reuse the UI language boundary without persisting section nodes.
+ * codes reuse the UI language boundary without persisting section nodes. Projected/folded pairs
+ * share the core defined-direction tier instead of independently merging arrow directions.
  */
 import type { App, CachedMetadata } from "obsidian";
 import type KplexPlugin from "../main";
@@ -9,7 +10,7 @@ import { LinkDirection, RelationType, type GraphPage, type Neighbour, type Neigh
 import { normalizeFieldName, type ParsedBodyMetadata } from "../core/parser/metadata";
 import { extractLinksFromValue, parseBodyMetadataCooperative } from "./fieldParser";
 import type { GraphIndex } from "./GraphIndex";
-import { applyEvidenceToRelation, applyOntologyPrecedence, emptyRelation, type EvidenceRole, type RelationEvidence } from "./RelationEvidence";
+import { applyEvidenceDecisionsToRelation, applyOntologyPrecedence, emptyRelation, type EvidenceRole, type RelationEvidence } from "./RelationEvidence";
 import { classifyRelation, explainResolvedRelationship, type RelationshipExplanation } from "./RelationResolver";
 import { canonicalWebUrl } from "../adapters/obsidian/urlIdentity";
 
@@ -187,7 +188,7 @@ function resolveNeighbourhood(
   const max = plugin.settings.maxItemCount;
   for (const { target, evidence: items } of evidenceByTarget.values()) {
     const relation: Relation = { ...emptyRelation(), target };
-    for (const decision of applyOntologyPrecedence(items)) applyEvidenceToRelation(relation, decision);
+    applyEvidenceDecisionsToRelation(relation, applyOntologyPrecedence(items));
     if (relation.isHidden || !index.isVisiblePage(target)) continue;
     center.neighbours.set(target.path, relation);
     for (const role of ["parent", "child", "left", "right", "previous", "next"] as const) {

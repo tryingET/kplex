@@ -2,6 +2,7 @@
  * Spanish translations for all K-Plex-owned user-facing copy.
  *
  * Product names, persisted identifiers and vault content are intentionally not translated here.
+ * Source metadata owns literal reference quoting; tag values include their # prefix.
  */
 import { buildLocaleCatalog, type LocaleTranslationMap } from "./catalog";
 
@@ -279,7 +280,7 @@ const spanishTranslations = {
   "notice.sidepanelUnavailable": "El panel lateral de Obsidian no está disponible en este espacio de trabajo.",
   "notice.popoutUnavailable": "Las ventanas emergentes no están disponibles en esta plataforma.",
   "notice.folder": "Carpeta: {name}",
-  "notice.tag": "Etiqueta: #{name}",
+  "notice.tag": "Etiqueta: {name}",
   "notice.openPluginSettings": "Abre Ajustes → Complementos de la comunidad → K-Plex.",
   "notice.selectedNoteNotIndexed": "La nota seleccionada aún no está en el índice de K-Plex.",
   "notice.alreadyConnected": "Estos nodos ya están conectados mediante esta puerta.",

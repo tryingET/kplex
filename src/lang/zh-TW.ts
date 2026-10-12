@@ -2,6 +2,7 @@
  * Traditional Chinese translations for all K-Plex-owned user-facing copy.
  *
  * Product names, persisted identifiers and vault content are intentionally not translated here.
+ * Source metadata owns literal reference quoting; tag values include their # prefix.
  */
 import { buildLocaleCatalog, type LocaleTranslationMap } from "./catalog";
 
@@ -277,7 +278,7 @@ const traditionalChineseTranslations = {
   "notice.sidepanelUnavailable": "此工作區無法使用 Obsidian 側邊面板。",
   "notice.popoutUnavailable": "此平台無法使用彈出視窗。",
   "notice.folder": "資料夾：{name}",
-  "notice.tag": "標籤：#{name}",
+  "notice.tag": "標籤：{name}",
   "notice.openPluginSettings": "開啟「設定 → 第三方外掛 → K-Plex」。",
   "notice.selectedNoteNotIndexed": "所選筆記尚未納入 K-Plex 索引。",
   "notice.alreadyConnected": "這些節點已透過此閘門連接。",

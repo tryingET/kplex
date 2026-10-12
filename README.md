@@ -178,9 +178,13 @@ A visible connection may come from YAML properties, body fields, ordinary links,
 
 Right-click a Markdown-backed node or unresolved placeholder and choose **Delete note…** / **Delete placeholder…**. The first time you use this workflow, K-Plex explains the behavior and asks whether file deletions should always require confirmation. That preference is also available under **Settings → K-Plex → Plex behavior → Navigation & interaction**.
 
-Deleting a Markdown file keeps the same graph node alive as a ghost, including when that node is currently in the center. Deleting the active center never navigates K-Plex away merely because the backing file disappeared. K-Plex automatically removes references stored in note properties. Links and inline relationship fields in Markdown content are never rewritten automatically; when they remain, K-Plex opens a **Remaining references** window with navigation buttons so you can review and remove those sources yourself. Once a non-active placeholder has no remaining references, K-Plex removes it from the graph. Files are sent through Obsidian's normal trash workflow.
+Deleting a note uses Obsidian's normal trash workflow. K-Plex removes it from navigation history and, when it was central, returns to the most recent remaining node or the vault root. Deleting a file outside K-Plex keeps its centered node as a placeholder.
 
-Right-click a connector to access two related workflows:
+The deletion preview removes references in configured relationship properties by default, including Hidden properties. Other properties are kept unless you select and confirm **Remove references** or **Keep links and hide connection** for that note and property. Hiding adds a configured Hidden relationship and preserves the original links. It applies when the note containing that Hidden property is central; the reverse connection may remain visible. The preview covers currently indexed sources; other references may exist. Markdown-body links and inline relationship fields are kept for manual review. **Remaining references** opens their source locations, reports unsuccessful source changes and keeps referenced placeholders available. Disabling file-delete confirmations does not approve changes to other properties.
+
+Use **Hide connection** from a connector's context menu or **Connection details** to preserve its source links. Select a Markdown note and a configured Hidden property, then confirm. The dialog shows which central note the Hidden relationship applies to and which endpoint it hides. Changing the selected note changes that direction. The connection may still appear when the other note is central, including preserved inline relationships. If no Hidden property is configured, add one in K-Plex settings first.
+
+Right-click a connector to inspect, unlink or hide its relationship:
 
 - **Connection details…** explains why K-Plex resolved the relationship the way it did, shows the active ontology, deduplicates repeated evidence that points to the same physical source location, and lets you jump to each exact source occurrence. You can add another ontology without rewriting or removing existing body/property sources; for an inferred relationship, **Specify ontology…** adds its first explicit ontology.
 - **Unlink connection** removes a single unambiguous editable property source directly. If several sources contribute to the edge, K-Plex opens Connection details rather than guessing which source you intended to remove.
@@ -325,6 +329,8 @@ node-image:: [[image.jpg]]
 - **node-image** replaces the visible label with a compact image while keeping the node's normal graph footprint and accessible file identity.
 
 Images stay deliberately small so they do not make the Plex expand. On desktop, hover the image for a larger preview with its original aspect ratio. The property names can be changed in **Settings → K-Plex → Visual styling → Node styling**.
+
+Vault images work by default. HTTP(S) images require **Allow remote node images** in the same settings section, which is off by default. Displaying a remote image contacts its host with your IP address and the image URL. Turning permission off prevents new loads; it cannot undo requests already sent or clear the browser's cache. Blocked remote values fall back to an available local image or the normal node label. This permission is separate from explicitly opening or embedding a web page.
 
 An image referenced only through the thumbnail/node-image fields is treated as presentation metadata, so it is not also shown as an inferred child. If the same image is linked independently through normal content or another ontology, it remains a normal graph node as well.
 

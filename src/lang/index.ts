@@ -2,6 +2,8 @@
  * Host-free, typed localization lookup with bundled locale catalogs, validated parameters, plural
  * forms and exact/base/English fallback. Developer diagnostics remain English; presentation receives
  * the translator through dependency injection rather than reading host language state directly.
+ * Source-owned reference metadata quotes literal note/property references consistently across locales;
+ * template quote wrappers are normalized while interpolated user values remain opaque text.
  */
 import { englishCatalog, type EnglishCatalog } from "./en";
 import { germanCatalog } from "./de";
@@ -16,6 +18,7 @@ type PrimitiveParam = string | number;
 type CatalogEntry = Readonly<{
   context: string;
   params: readonly string[];
+  referenceParams?: readonly string[];
   message?: string;
   plural?: Readonly<Record<string, string>>;
   countParam?: string;
@@ -40,6 +43,7 @@ export type PlainTranslationKey = {
 
 const PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9_]*)\}/g;
 const PLURAL_CATEGORIES = new Set(["zero", "one", "two", "few", "many", "other"]);
+const REFERENCE_QUOTES: Readonly<Record<string,string>> = { '"':'"', "'":"'", "“":"”", "„":"“", "«":"»", "»":"«", "‹":"›", "›":"‹", "「":"」", "『":"』", "‘":"’", "‚":"‘" };
 
 const bundledLocaleCatalogs: RuntimeLocaleCatalogs = {
   de: germanCatalog,
@@ -51,14 +55,17 @@ const bundledLocaleCatalogs: RuntimeLocaleCatalogs = {
   "zh-tw": traditionalChineseCatalog,
 };
 
+/** Collect declared interpolation names without examining literal parameter values. */
 function placeholders(template: string): Set<string> {
-  return new Set([...template.matchAll(PLACEHOLDER)].map((match) => match[1]));
+  return new Set([...template.matchAll(PLACEHOLDER)].map(/** Each occurrence contributes its source-owned name. */ (match) => match[1]));
 }
 
+/** Reject invalid catalog metadata before any localized text can be formatted. */
 function fail(catalogName: string, key: string, message: string): never {
   throw new Error(`Invalid localization entry ${catalogName}:${key}: ${message}`);
 }
 
+/** Validate parameter subsets, reference classification and every message/plural form. */
 function validateEntry(catalogName: string, key: string, raw: unknown): CatalogEntry {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail(catalogName, key, "entry must be an object");
   const entry = raw as Record<string, unknown>;
@@ -70,6 +77,13 @@ function validateEntry(catalogName: string, key: string, raw: unknown): CatalogE
   }
   const params = rawParams as string[];
   if (new Set(params).size !== params.length) fail(catalogName, key, "params must not contain duplicates");
+  if (entry.referenceParams !== undefined) {
+    if (!Array.isArray(entry.referenceParams) || entry.referenceParams.some(/** Reference metadata names only declared literal parameters. */ name => typeof name !== "string" || !params.includes(name))) {
+      fail(catalogName,key,"referenceParams must be an array of declared parameter names");
+    }
+    if (new Set(entry.referenceParams).size !== entry.referenceParams.length) fail(catalogName,key,"referenceParams must not contain duplicates");
+    if (entry.countParam !== undefined && entry.referenceParams.includes(entry.countParam)) fail(catalogName,key,"plural countParam cannot be a reference parameter");
+  }
 
   const hasMessage = "message" in entry;
   const hasPlural = "plural" in entry;
@@ -113,10 +127,12 @@ export function validateCatalog(catalogName: string, catalog: RuntimeCatalog): v
   for (const [key, entry] of Object.entries(catalog)) validateEntry(catalogName, key, entry);
 }
 
+/** Normalize exact/base locale identifiers without changing translated user text. */
 function normalizeLocale(language: string): string {
   return language.trim().replace(/_/g, "-").toLocaleLowerCase();
 }
 
+/** Order exact then base language lookup, with English fallback owned separately. */
 function localeCandidates(language: string): string[] {
   const exact = normalizeLocale(language);
   if (!exact) return [];
@@ -124,6 +140,7 @@ function localeCandidates(language: string): string[] {
   return exact === base ? [exact] : [exact, base];
 }
 
+/** Use the selected message locale's plural rules, rejecting unsupported locale identifiers. */
 function pluralRules(locale: string): Intl.PluralRules {
   try {
     return new Intl.PluralRules(locale);
@@ -132,6 +149,7 @@ function pluralRules(locale: string): Intl.PluralRules {
   }
 }
 
+/** Require all forms the message locale can select before rendering any plural entry. */
 function validatePluralCoverage(locale: string, key: string, entry: CatalogEntry): void {
   if (!entry.plural) return;
   const required = pluralRules(locale).resolvedOptions().pluralCategories;
@@ -140,17 +158,48 @@ function validatePluralCoverage(locale: string, key: string, entry: CatalogEntry
   }
 }
 
-function entryFor(key: string, language: string, localeCatalogs: RuntimeLocaleCatalogs): { entry: CatalogEntry; locale: string } {
+/** Resolve one validated key with source reference metadata retained across locale fallback. */
+function entryFor(key: string, language: string, localeCatalogs: RuntimeLocaleCatalogs): { entry: CatalogEntry; locale: string; referenceParams: readonly string[] } {
   const fallback = (englishCatalog as RuntimeCatalog)[key];
   if (fallback === undefined) throw new Error(`Unknown localization key: ${key}`);
+  const source = validateEntry("en",key,fallback), referenceParams = source.referenceParams ?? [];
   for (const locale of localeCandidates(language)) {
     const candidate = localeCatalogs[locale]?.[key];
-    if (candidate !== undefined) return { entry: validateEntry(locale, key, candidate), locale };
+    if (candidate !== undefined) return { entry: validateEntry(locale, key, candidate), locale, referenceParams };
   }
-  return { entry: validateEntry("en", key, fallback), locale: "en" };
+  return { entry: source, locale: "en", referenceParams };
 }
 
-function formatEntry(key: string, entry: CatalogEntry, locale: string, rawParams: Readonly<Record<string, PrimitiveParam>> | undefined): string {
+/** Remove only paired template-owned wrappers immediately enclosing one marked placeholder. */
+function referencePlaceholderBounds(template: string, start: number, end: number, cursor: number): readonly [number,number] {
+  for (;;) {
+    let left = start - 1, right = end;
+    while (left >= cursor && /\s/u.test(template[left])) left--;
+    while (right < template.length && /\s/u.test(template[right])) right++;
+    if (left < cursor || right >= template.length || !REFERENCE_QUOTES[template[left]] || REFERENCE_QUOTES[template[left]] !== template[right]) break;
+    start = left;end = right + 1;
+  }
+  return [start,end];
+}
+
+/** Interpolate once; literal values containing quotes, backslashes or placeholders remain unchanged data. */
+function formatTemplate(template: string, params: Readonly<Record<string,PrimitiveParam>>, references: readonly string[]): string {
+  const marked = new Set(references);
+  let formatted = "", cursor = 0;
+  for (const match of template.matchAll(PLACEHOLDER)) {
+    let start = match.index, end = start + match[0].length;
+    const name = match[1], value = String(params[name]);
+    if (marked.has(name)) {
+      [start,end] = referencePlaceholderBounds(template,start,end,cursor);
+      formatted += template.slice(cursor,start) + `"${value}"`;
+    } else formatted += template.slice(cursor,start) + value;
+    cursor = end;
+  }
+  return formatted + template.slice(cursor);
+}
+
+/** Enforce exact arguments and plural selection, then quote only source-classified literal references. */
+function formatEntry(key: string, entry: CatalogEntry, locale: string, rawParams: Readonly<Record<string, PrimitiveParam>> | undefined, references: readonly string[]): string {
   const expected = entry.params;
   const params = rawParams ?? {};
   for (const name of expected) {
@@ -172,7 +221,7 @@ function formatEntry(key: string, entry: CatalogEntry, locale: string, rawParams
     if (!template) throw new Error(`Malformed plural localization entry: ${key}`);
   }
 
-  const formatted = template.replace(PLACEHOLDER, (_match, name: string) => String(params[name]));
+  const formatted = formatTemplate(template,params,references);
   if (!formatted.trim()) throw new Error(`Localization entry ${key} formatted to blank text`);
   return formatted;
 }
@@ -185,6 +234,7 @@ for (const [key, rawEntry] of Object.entries(englishCatalog)) {
 /**
  * Create a typed translator for the requested host language. Bundled locale catalogs are used by
  * default; callers may inject catalogs for validation/tests. Missing locales/keys fall back to English.
+ * Reference classification is inherited from English; locales may repeat but cannot change it.
  */
 export function createTranslator(language: string, localeCatalogs: RuntimeLocaleCatalogs = bundledLocaleCatalogs): Translator {
   const normalizedCatalogs: Record<string, RuntimeCatalog | undefined> = {};
@@ -203,12 +253,17 @@ export function createTranslator(language: string, localeCatalogs: RuntimeLocale
       if (Boolean(sourceEntry.plural) !== Boolean(translatedEntry.plural) || sourceEntry.countParam !== translatedEntry.countParam) {
         fail(locale, key, "plural shape differs from the English source catalog");
       }
+      const sourceReferences = sourceEntry.referenceParams ?? [], translatedReferences = translatedEntry.referenceParams;
+      if (translatedReferences !== undefined && (sourceReferences.length !== translatedReferences.length
+        || sourceReferences.some(/** Locales preserve semantic classification rather than reinterpreting parameter names. */ name => !translatedReferences.includes(name)))) {
+        fail(locale,key,"reference parameters differ from the English source catalog");
+      }
       validatePluralCoverage(normalizeLocale(locale), key, translatedEntry);
     }
     normalizedCatalogs[normalizeLocale(locale)] = catalog;
   }
-  return ((key: TranslationKey, params?: Readonly<Record<string, PrimitiveParam>>) => {
-    const { entry, locale } = entryFor(key, language, normalizedCatalogs);
-    return formatEntry(key, entry, locale, params);
+  return (/** Resolve and render one message without reinterpreting values as templates. */ (key: TranslationKey, params?: Readonly<Record<string, PrimitiveParam>>) => {
+    const { entry, locale, referenceParams } = entryFor(key, language, normalizedCatalogs);
+    return formatEntry(key, entry, locale, params, referenceParams);
   });
 }

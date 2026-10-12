@@ -1,6 +1,7 @@
 /**
  * Runs the production relationship commit, navigation camera and pointer-drop callbacks with bounded host doubles.
- * Source extraction isolates native shells without replacing the behavior under test.
+ * Source extraction isolates native shells without replacing the behavior under test. Actual evidence
+ * tooltip callbacks distinguish quoted property references from descriptive source-kind labels.
  */
 import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
@@ -14,9 +15,9 @@ import ts from "typescript";
 // The real convergence adapter is exercised with host events, not replaced by an immediate success.
 const metadataTemp = mkdtempSync(join(tmpdir(), "kplex-created-metadata-"));
 process.on("exit", () => rmSync(metadataTemp, { recursive: true, force: true }));
-await build({ stdin: { contents: 'export * from "./src/adapters/obsidian/relationshipMetadataWrite"; export { normalizeFieldName } from "./src/core/contracts/fieldName"; export { captureSurfaceContinuation } from "./src/ui/surfaceContinuation";', resolveDir: fileURLToPath(new URL("..", import.meta.url)) },
+await build({ stdin: { contents: 'export * from "./src/adapters/obsidian/relationshipMetadataWrite"; export { normalizeFieldName } from "./src/core/contracts/fieldName"; export { captureSurfaceContinuation } from "./src/ui/surfaceContinuation"; export { createTranslator } from "./src/lang/index";', resolveDir: fileURLToPath(new URL("..", import.meta.url)) },
   outfile: join(metadataTemp, "observer.mjs"), bundle: true, platform: "node", format: "esm" });
-const { writeRelationshipMetadata, SavedRelationshipPendingError: ActualSavedPendingError, normalizeFieldName: actualNormalizeFieldName, captureSurfaceContinuation }
+const { writeRelationshipMetadata, SavedRelationshipPendingError: ActualSavedPendingError, normalizeFieldName: actualNormalizeFieldName, captureSurfaceContinuation, createTranslator }
   = await import(pathToFileURL(join(metadataTemp, "observer.mjs")));
 
 /** Compile a production callback/method; class-field arrows capture the supplied owning instance. */
@@ -38,6 +39,22 @@ function productionFunction(path, name, dependencies) {
 
 /** Minimal Markdown-backed graph page retaining exact endpoint paths and canonical identity. */
 function page(path) { return { path, file: { path, extension: "md" }, neighbours: new Map() }; }
+
+/** The actual connector hint quotes field coordinates but leaves role/type and source-kind prose plain. */
+test("connector evidence tooltip shares semantic reference quoting without quoting source-kind descriptions", () => {
+  const RelationType={DEFINED:1,INFERRED:2},translate=createTranslator("en");
+  const roleLabels=productionFunction("src/ui/PlexGraph.tsx","EVIDENCE_ROLE_LABEL",{}),sourceLabels=productionFunction("src/ui/PlexGraph.tsx","EVIDENCE_SOURCE_LABEL",{});
+  const relationTypeText=productionFunction("src/ui/PlexGraph.tsx","relationTypeText",{RelationType});
+  const tooltip=productionFunction("src/ui/PlexGraph.tsx","edgeEvidenceTooltipText",{EVIDENCE_ROLE_LABEL:roleLabels,EVIDENCE_SOURCE_LABEL:sourceLabels,relationTypeText});
+  const decisions=[
+    {active:true,evidence:{fieldName:'Child "reference"',sourceKind:"frontmatter-ontology",role:"child",relationType:1}},
+    {active:true,evidence:{sourceKind:"obsidian-link",role:"child",relationType:2}},
+    {active:false,evidence:{fieldName:"Parent",sourceKind:"inline-ontology",role:"parent",relationType:1}},
+  ];
+  const index={explainRelationship:()=>({resolvedRoles:[],hidden:false,decisions})};
+  assert.equal(tooltip(index,{sourcePath:"A.md",targetPath:"B.md"},translate),
+    '"Child "reference"" — Child · Defined\n'+translate("graph.sourceResolvedLink")+' — Child · Inferred\n"Parent" — Parent · Defined · overridden');
+});
 
 /** Native Escape cancellation retains the exact originating Plex, not mutable workspace focus. */
 test("shared menu Escape restores its owning Plex and releases owning-document listeners", async () => {

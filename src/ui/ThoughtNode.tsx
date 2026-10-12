@@ -4,6 +4,7 @@
  * labels are layout copy; semantic roles, coverage and drag effects belong to callers. Keyboard selection
  * is distinct from the central node and uses caller-supplied occurrence identity. Visible text shares
  * the density-independent geometry limit, preserving prefixes, ellipsis and center allowance.
+ * The final image boundary rechecks consent before producing a src, including retained cached props.
  */
 import { type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { GateSide, NodeVisual, PositionedNode } from "../types";
@@ -13,11 +14,12 @@ import { effectiveLabelLimit, nodeLabelFontSize, gateDiameter } from "./layout";
 import { ObsidianIcon } from "./ObsidianIcon";
 import type { Translator } from "../lang";
 import { physicalPositionLabel } from "./features/positionPresentation";
+import { canDisplayNodeImage } from "../core/plex/nodeImagePolicy";
 
 const GATES: GateSide[] = ["top", "bottom", "left", "right"];
 export type ConnectionDragState = "normal" | "candidate" | "blocked" | "origin";
 
-/** Render a Plex node and physical gates with localized interaction hints; user labels, semantic roles and event effects stay caller-owned. */
+/** Render localized nodes/gates, withholding denied image destinations before any DOM src assignment. */
 export function ThoughtNode({
   node,
   settings,
@@ -82,6 +84,8 @@ export function ThoughtNode({
     foldedTitle?: string;
   };
 }) {
+  // Cached props can outlive resolution. Remove the image before React can assign a denied src.
+  if (visual && !canDisplayNodeImage(visual.path, settings.allowRemoteNodeImages)) visual = undefined;
   const style = node.style;
   const isSection = node.page.transient?.kind === "section";
   const strokeStyle = style.strokeStyle === "dashed" ? "dashed" : style.strokeStyle === "dotted" ? "dotted" : "solid";

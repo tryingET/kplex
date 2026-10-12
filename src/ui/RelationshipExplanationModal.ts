@@ -1,7 +1,8 @@
 /**
  * Native Connection details dialog over pair-scoped semantic explanations and provenance. This host UI
  * formats stable reason codes and offers additive ontology, source navigation and confirmed selected
- * frontmatter removal. Generation fences own reads/confirmation UI; saved writes remain plugin-owned.
+ * frontmatter removal and additive Hidden declarations that preserve original links. Generation
+ * fences own reads and child confirmation UI; saved writes remain plugin-owned.
  */
 import { Modal, Notice, setIcon, type WorkspaceLeaf } from "obsidian";
 import type KplexPlugin from "../main";
@@ -13,6 +14,7 @@ import type { Translator, PlainTranslationKey } from "../lang";
 import { frontmatterDeclarationKey, selectedFrontmatterDeclarations } from "../application/frontmatterUnlink";
 import { SavedRelationshipPendingError } from "../adapters/obsidian/relationshipMetadataWrite";
 import { RemoveRelationshipSourceModal } from "./RemoveRelationshipSourceModal";
+import type { HideRelationshipModal } from "./DeleteNodeModal";
 import type { RelationEvidence } from "../index/RelationEvidence";
 
 const ROLE_LABEL: Record<string, PlainTranslationKey> = {
@@ -130,7 +132,7 @@ export class RelationshipExplanationModal extends Modal {
   private closed = false;
   private loadGeneration = 0;
   private operation: "idle" | "confirming" | "removing" | "saved-pending" = "idle";
-  private confirmation: RemoveRelationshipSourceModal | null = null;
+  private confirmation: RemoveRelationshipSourceModal | HideRelationshipModal | null = null;
   private removalButtons: HTMLButtonElement[] = [];
   private mutationNavigationButtons: HTMLButtonElement[] = [];
   private renderedDeclarations = new Set<string>();
@@ -210,6 +212,30 @@ export class RelationshipExplanationModal extends Modal {
         hostLeaf: this.displayContext?.hostLeaf,
       });
     });
+  }
+
+  /** Reuse confirmed additive Hidden writes for the inspected pair, preserving all source links. */
+  private addHiddenAction(parent: HTMLElement): void {
+    if (!this.plugin.hideRelationship) return;
+    const generation = this.loadGeneration;
+    const button = iconButton(parent,"eye-off",this.plugin.translator("hide.title"), /** Parent close or refresh retires confirmation authority. */ () => {
+      if (!this.isCurrent(generation) || this.operation !== "idle") return;
+      this.setOperation("confirming");
+      void this.plugin.hideRelationship(this.explanation.sourcePath,this.explanation.targetPath, /** Keep one mounted inspection generation through native mutation. */ () => this.isCurrent(generation),
+        /** Parent refresh/close owns the exact native confirmation, while saved writes remain plugin-owned. */ modal => {this.confirmation = modal;}).then(
+        /** Return to source inspection after cancellation or show truthful persisted status. */ outcome => {
+          if (!this.isCurrent(generation)) return;
+          this.setOperation(outcome.status === "saved-pending" ? "saved-pending" : "idle");
+          this.refreshDetails();
+        }, /** Preparation failures retire the operation without creating unhandled native UI work. */ () => {
+          if (!this.isCurrent(generation)) return;
+          this.setOperation("idle");
+          this.refreshDetails(this.plugin.translator("explain.removeSourceChanged"));
+        });
+    });
+    button.disabled = this.operation !== "idle";
+    button.dataset.kplexHideConnection = "true";
+    this.mutationNavigationButtons.push(button);
   }
 
   /** Render one evidence source and its localized annotations while retaining original Markdown text and navigation locations. */
@@ -402,6 +428,7 @@ export class RelationshipExplanationModal extends Modal {
     pair.createEl("strong", { text: targetTitle, attr: { title: this.explanation.targetPath } });
 
     this.addOntologyEditor(this.contentEl);
+    this.addHiddenAction(this.contentEl);
 
     if (this.displayContext?.role === "sibling") {
       const center = this.displayContext.centerPath ? this.plugin.index.get(this.displayContext.centerPath) : null;
