@@ -23,7 +23,7 @@ const main = ts.createSourceFile('main.ts', readFileSync('src/main.ts','utf8'), 
 const owner = main.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'KplexPlugin');
 const save = owner.members.find(node => node.name?.getText(main) === 'saveSettings');
 assert(save, 'Compile the actual saveSettings method, never a policy reimplementation');
-const saveBundle = ts.transpileModule(`const {captureSettingsPolicy,classifySettingsChange}=window.sourceModules; window.ImageSaveOwner=class {${save.getText(main)}};`, {compilerOptions:{target:ts.ScriptTarget.ES2021,module:ts.ModuleKind.None}}).outputText;
+const saveBundle = ts.transpileModule(`const {captureSettingsPolicy,classifySettingsChange,isStyleOnlySettingsChange}=window.sourceModules; window.ImageSaveOwner=class {${save.getText(main)}};`, {compilerOptions:{target:ts.ScriptTarget.ES2021,module:ts.ModuleKind.None}}).outputText;
 const bundle = indexBundle + '\n' + ui.outputFiles[0].text + '\n' + saveBundle;
 
 /** Own one real browser, real cache and finite image-bearing inventory per scenario. */

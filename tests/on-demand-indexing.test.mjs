@@ -13,7 +13,7 @@ const bundle = await contributorBrowserBundle(['src/index/GraphIndex.ts', 'src/i
 /** Keep the actual settings classifier, save queue and typography writers without plugin startup. */
 function typographyHostSource() {
   const file=ts.createSourceFile('main.ts',readFileSync('src/main.ts','utf8'),ts.ScriptTarget.Latest,true);
-  const names=new Set(['saveSettings','enqueueSettingsWrite','settingsSnapshotForPersistence','persistSettingsSnapshot',
+  const names=new Set(['saveSettings','updateStyleSettings','enqueueSettingsWrite','settingsSnapshotForPersistence','persistSettingsSnapshot',
     'stageTypographyOverride','persistTypographySettings','updateTypographyOverride','resetTypographyOverride']);
   const methods=[];
   const visit=node=>{if(ts.isMethodDeclaration(node)&&names.has(node.name.getText(file)))methods.push(node.getText(file));ts.forEachChild(node,visit);};
@@ -37,7 +37,7 @@ const initialize = `(() => {
   };
   window.settleDemand=async(index)=>{while(index.onDemandTasks.size)await Promise.all([...index.onDemandTasks.values()]);};
   window.typographyHost=o=>{
-    const {captureSettingsPolicy,classifySettingsChange,mergeTypographyOverride,resetTypographyOverride:resetDeviceTypography}=sourceModules;
+    const {captureSettingsPolicy,classifySettingsChange,isStyleOnlySettingsChange,mergeTypographyOverride,resetTypographyOverride:resetDeviceTypography}=sourceModules;
     class Notice {constructor(message){throw new Error('Unexpected settings failure: '+message);}}
     ${typographyHostSource()}
     const host=new TypographyHost();host.settings=o.settings;host.index=o.index;host.settingsWriteQueue=Promise.resolve();
@@ -205,6 +205,36 @@ test('native case rename retains an actual host preview while the older canonica
     equal(index.titleFor(nodes[0].page),'Stable alias','Preview retains known facets');
     ok(!index.isSemanticWriteReady('A.md',b.path),'Provisional host read never grants source write authority');return true;
   }finally{o.close();}
+})()`));
+
+test('durable and compatibility style saves retain real on-demand authority with zero source acquisition', async()=>scenario(`(async()=>{
+  const o=await onDemandFixture('v2-demand-style-commit',{noteTypeStyles:{},tagNodeStyles:{},tagStyleList:[],hierarchyLinkStyles:{}});
+  const {f,index}=o;let release;const restores=[];
+  try{
+    f.add('A.md','',{Parent:'[[B]]',Style:'#work'});f.metadata.get('A.md').hostTags=['#work'];f.add('B.md','');f.app.metadataCache.resolvedLinks={'A.md':{'B.md':1}};
+    ok(await index.initializeOnDemandBaseline(),'Baseline');release=index.acquireSemanticDemand('A.md');await settleDemand(index);
+    ok(await index.prepareRelationshipPair('A.md','B.md'),'Real selected pair prepared');await index.sourceAcquisition.repository.flush();
+    ok(index.isSemanticWriteReady('A.md','B.md'),'Initial selected pair is authoritative before styles');
+    const host=typographyHost(o),work={reads:0,parses:0,acquisitions:0,semanticRefreshes:0,publications:0};
+    const observe=(owner,name,counter)=>{const original=owner[name];owner[name]=function(...args){work[counter]++;return original.apply(this,args);};restores.push(()=>owner[name]=original);};
+    observe(f.app.vault,'read','reads');observe(f.app.vault,'cachedRead','reads');observe(index.sourceAcquisition,'parse','parses');observe(index.sourceAcquisition,'acquire','acquisitions');observe(index,'refreshSemanticSettings','semanticRefreshes');
+    restores.push(index.subscribe(()=>work.publications++));
+    const publication=index.publicationRevision,policy=index.semanticPolicyRevision,token=index.onDemandIndexed.get('A.md');let presentations=0;restores.push(index.subscribePresentation(()=>presentations++));
+    await index.withForegroundPriority(async()=>{
+      let timer;try{await Promise.race([(async()=>{
+        equal(await host.updateStyleSettings(draft=>{draft.noteTypeStyles.Project={icon:'box'};}),{refreshPending:false},'Actual durable style commit');
+        await host.updateStyleSettings(draft=>{draft.tagNodeStyles['#work']={icon:'info'};draft.tagStyleList.push('#work');});
+        host.settings.hierarchyLinkStyles.parent={strokeWidth:3};await host.saveSettings(false);
+      })(),new Promise((_,reject)=>timer=setTimeout(()=>reject(new Error('Style save awaited unrelated semantic work')),3000))]);}finally{clearTimeout(timer);}
+    });
+    equal(work,{reads:0,parses:0,acquisitions:0,semanticRefreshes:0,publications:0},'Styles never acquire sources or rebuild semantics');
+    equal(index.publicationRevision,publication,'Canonical publication retained');equal(index.semanticPolicyRevision,policy,'Semantic policy retained');
+    ok(index.onDemandIndexed.get('A.md')===token,'Demanded scope token retained');ok(index.isSemanticWriteReady('A.md','B.md'),'Exact selected pair remains authoritative');
+    ok(presentations>=3,'Actual committed style changes notify presentation consumers');
+    equal(JSON.parse(localStorage.getItem('typography-settings')).tagStyleList,['#work'],'Real persistence includes matching order');
+    equal(index.get('A.md').primaryStyleTag,'#work','Tag-order commit applies actual cached facets');
+    return true;
+  }finally{restores.reverse().forEach(restore=>restore());release?.();o.close();}
 })()`));
 
 test('actual typography saves and resets retain on-demand authority with zero source work; mixed overlapping saves still recanonicalize', async()=>scenario(`(async()=>{

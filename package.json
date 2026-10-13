@@ -44,6 +44,8 @@
     "verify:obsidian:arrow-direction": "node scripts/testing/obsidian/arrowDirection.mjs",
     "verify:obsidian:rename": "node scripts/testing/obsidian/renameIdentity.mjs",
     "verify:obsidian:menu-anchor": "node scripts/testing/obsidian/menuAnchor.mjs",
+    "verify:obsidian:style-operations": "node scripts/testing/obsidian/styleOperations.mjs",
+    "verify:obsidian:sidecar-latency": "node scripts/testing/obsidian/sidecarLatency.mjs",
     "verify:obsidian:delete-cleanup": "node scripts/testing/obsidian/deleteCleanup.mjs"
   },
   "engines": {

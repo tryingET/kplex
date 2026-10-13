@@ -13,6 +13,8 @@
  * Sparse per-note Markdown zoom overrides are durable local workflow data, independent of graph imports.
  * Cross-link visibility is shared persisted presentation state for the filter panel and Plex settings.
  * Remote node imagery requires explicit local opt-in; absent or malformed persisted consent stays off.
+ * Style editors publish only durable queued drafts, exclude duplicate operations and distinguish
+ * storage failure from saved changes whose presentation/manager refresh still needs recovery.
  */
 import {
   AbstractInputSuggest,
@@ -670,6 +672,13 @@ const normalizeTagStylePrefix = (value: string): string => {
 };
 const sixHex = (value?: string, fallback = "#000000") => /^#[0-9a-f]{6}/i.test(value ?? "") ? (value as string).slice(0, 7) : fallback;
 const eightHex = (value: string) => `${value.slice(0, 7)}ff`;
+
+/** Native color pickers normalize RGB case and cannot edit alpha. Preserve untouched/inherited colors and the existing alpha when only RGB changes. */
+const nodeStyleColor = (value: string, previous: string | undefined, fallback: string): string | undefined => {
+  if (value.toLowerCase() === sixHex(previous, fallback).toLowerCase()) return previous;
+  const alpha = previous?.match(/^#[0-9a-f]{6}([0-9a-f]{2})$/i)?.[1] ?? "ff";
+  return `${value.slice(0, 7)}${alpha}`;
+};
 const canonicalHex = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
   const lower = value.trim().toLowerCase();
@@ -843,9 +852,98 @@ const describeNodeStyle = (style: NodeStyle, translate: Translator): string => {
   return parts.length ? parts.join(" · ") : translate("styles.inheritedNodeDefaults");
 };
 
-class NodeStyleModal extends Modal {
+/** Narrow mutable draft owned exclusively by one queued style-manager operation. */
+export type StyleSettingsDraft = Pick<KplexSettings, "noteTypeStyles" | "tagNodeStyles" | "tagStyleList" | "hierarchyLinkStyles">;
+/** Persistence has succeeded; a failed refresh must never be offered as an unsaved retry. */
+export type StyleCommitResult = Readonly<{ refreshPending: boolean }>;
+
+/** Native style-editor shell sharing pending exclusion and truthful completion across both style families. */
+abstract class StyleEditorModal extends Modal {
+  protected readonly translate = createObsidianTranslator();
+  private operationPending = false;
+  private operationCommitted = false;
+  private lifetime = 0;
+  private editorOpen = false;
+  private feedback: HTMLElement | null = null;
+
+  /** Start a fresh editor lifetime; retired asynchronous completions cannot close its replacement. */
+  protected beginEditor(): void {
+    this.lifetime += 1;
+    this.editorOpen = true;
+    this.operationPending = false;
+    this.operationCommitted = false;
+    this.modalEl.setAttribute("aria-busy", "false");
+    this.feedback = this.contentEl.createDiv({ cls: "setting-item-description", attr: { role: "status", "aria-live": "polite" } });
+  }
+
+  /** Submit once, freeze the captured draft and block Cancel/Escape until its durable outcome is known. */
+  protected runOperation(operation: (isCurrent: () => boolean) => Promise<StyleCommitResult>): void {
+    if (this.operationPending || this.operationCommitted || !this.editorOpen) return;
+    const lifetime = this.lifetime;
+    /** External teardown retires UI callbacks but never pretends an already submitted disk write was canceled. */
+    const isCurrent = (): boolean => this.editorOpen && this.lifetime === lifetime
+      && this.modalEl.isConnected && !this.modalEl.ownerDocument.defaultView?.closed;
+    const controls = Array.from(this.contentEl.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>("input, select, button"));
+    const disabled = controls.map(/** Restore existing fixed-family and inherited disabled state after a failed save. */ control => control.disabled);
+    this.operationPending = true;
+    this.modalEl.setAttribute("aria-busy", "true");
+    this.feedback?.setText(this.translate("styles.operation.saving"));
+    for (const control of controls) control.disabled = true;
+    /** Separate durable operation failure from UI completion failure so a saved change never becomes an unsaved retry. */
+    const finish = async (): Promise<void> => {
+      let result: StyleCommitResult;
+      try {
+        result = await operation(isCurrent);
+      } catch (error) {
+        console.error("K-Plex style operation was not saved", error);
+        if (!isCurrent()) return;
+        this.operationPending = false;
+        this.modalEl.setAttribute("aria-busy", "false");
+        controls.forEach(/** Only restore this still-live form after persistence rejected. */ (control, index) => { control.disabled = disabled[index]; });
+        this.feedback?.setText(this.translate("styles.operation.notSaved"));
+        return;
+      }
+      if (!isCurrent()) return;
+      this.operationPending = false;
+      this.operationCommitted = true;
+      if (result.refreshPending) {
+        try { new Notice(this.translate("styles.operation.savedRefreshPending")); }
+        catch (error) { console.error("K-Plex saved style recovery notice failed", error); }
+      }
+      try { this.close(); } catch (error) {
+        console.error("K-Plex saved style editor close failed", error);
+        if (!isCurrent()) return;
+        this.modalEl.setAttribute("aria-busy", "false");
+        this.feedback?.setText(this.translate("styles.operation.savedRefreshPending"));
+        for (const control of controls) {
+          // Saved operations cannot run again. Only dismissal is available after a native close failure.
+          if (control.tagName === "BUTTON" && control.textContent === this.translate("common.cancel")) {
+            control.disabled = false;
+            control.setText(this.translate("styles.operation.close"));
+            appendIcon(control, "x");
+          }
+        }
+      }
+    };
+    void finish();
+  }
+
+  /** Native Escape, the close icon and Cancel share the pending-operation exclusion. */
+  close(): void {
+    if (!this.operationPending) super.close();
+  }
+
+  /** Retire the exact form before subclasses remove controls and suggestion popovers. */
+  onClose(): void {
+    this.editorOpen = false;
+    this.operationPending = false;
+    this.lifetime += 1;
+    this.feedback = null;
+  }
+}
+
+class NodeStyleModal extends StyleEditorModal {
   private static nextFormId = 0;
-  private readonly translate = createObsidianTranslator();
   private valueSuggest?: NodeStyleValueSuggest;
   private iconSuggest?: LucideIconSuggest;
 
@@ -856,8 +954,8 @@ class NodeStyleModal extends Modal {
     private initialStyle: NodeStyle,
     private styleProperty: string,
     private valueSuggestions: Record<NodeStyleKind, NodeStyleValueSuggestion[]>,
-    private onSave: (name: string, style: NodeStyle, previousName: string | null, kind: NodeStyleKind) => Promise<void>,
-    private onDelete?: (name: string) => Promise<void>,
+    private onSave: (name: string, style: NodeStyle, previousName: string | null, kind: NodeStyleKind, isCurrent: () => boolean) => Promise<StyleCommitResult>,
+    private onDelete?: (name: string, isCurrent: () => boolean) => Promise<StyleCommitResult>,
     private initialKind: NodeStyleKind = "property",
   ) {
     super(app);
@@ -865,6 +963,7 @@ class NodeStyleModal extends Modal {
 
   /** Render both matching modes in one form so switching a new style preserves its appearance draft. */
   onOpen(): void {
+    this.beginEditor();
     this.titleEl.setText(this.translate(this.initialName ? "styles.editNode" : "styles.addNode"));
     this.modalEl.addClass("kplex-style-editor-modal");
     this.contentEl.addClass("kplex-style-editor");
@@ -972,7 +1071,7 @@ class NodeStyleModal extends Modal {
       const remove = actions.createEl("button", { cls: "mod-warning", text: this.translate("common.delete") });
       appendIcon(remove, "trash-2");
       remove.addEventListener("click", /** Delete only the style whose fixed family is being edited. */ () => {
-        void this.onDelete!(this.initialName!).then(() => this.close());
+        this.runOperation(/** Capture the fixed family/name once while excluding repeated clicks. */ isCurrent => this.onDelete!(this.initialName!, isCurrent));
       });
     }
     const cancel = actions.createEl("button", { text: this.translate("common.cancel") });
@@ -993,42 +1092,44 @@ class NodeStyleModal extends Modal {
       const style: NodeStyle = {
         ...this.initialStyle,
         icon: iconInput.value.trim() || undefined,
-        backgroundColor: background.value === sixHex(this.initialStyle.backgroundColor, "#182433") ? this.initialStyle.backgroundColor : eightHex(background.value),
-        textColor: text.value === sixHex(this.initialStyle.textColor, "#ffffff") ? this.initialStyle.textColor : eightHex(text.value),
-        borderColor: border.value === sixHex(this.initialStyle.borderColor, "#6f849a") ? this.initialStyle.borderColor : eightHex(border.value),
+        backgroundColor: nodeStyleColor(background.value, this.initialStyle.backgroundColor, "#182433"),
+        textColor: nodeStyleColor(text.value, this.initialStyle.textColor, "#ffffff"),
+        borderColor: nodeStyleColor(border.value, this.initialStyle.borderColor, "#6f849a"),
         fontSize: fontSize.value === String(this.initialStyle.fontSize ?? 18) ? this.initialStyle.fontSize : Math.max(8, Math.min(40, Number(fontSize.value) || 18)),
         // Keep an absent label prefix inherited unless the user changes the input.
         ...(kind === "tag" && prefixInput.value !== (this.initialStyle.prefix ?? "") ? { prefix: prefixInput.value } : {}),
       };
-      void this.onSave(name, style, this.initialName, kind).then(() => this.close());
+      this.runOperation(/** Submit the validated appearance draft within this exact modal lifetime. */ isCurrent => this.onSave(name, style, this.initialName, kind, isCurrent));
     });
-    window.setTimeout(/** Focus the value after the native modal has mounted. */ () => nameInput.focus(), 0);
+    (nameInput.ownerDocument.defaultView ?? window).setTimeout(/** Focus only this still-mounted form after native attachment. */ () => { if (nameInput.isConnected) nameInput.focus(); }, 0);
   }
 
   /** Close form-owned suggestion popovers before dropping the native modal's form elements. */
   onClose(): void {
+    super.onClose();
     this.valueSuggest?.close();
     this.iconSuggest?.close();
     this.contentEl.empty();
   }
 }
 
-class OntologyLinkStyleModal extends Modal {
-  private readonly translate = createObsidianTranslator();
+class OntologyLinkStyleModal extends StyleEditorModal {
 
+  /** Edit one field's appearance; queued save/reset return a durable outcome independent of manager refresh. */
   constructor(
     app: App,
     private fieldName: string,
     private initialStyle: LinkStyle,
     private baseStyle: LinkStyle,
-    private onSave: (style: LinkStyle) => Promise<void>,
-    private onReset: () => Promise<void>,
+    private onSave: (style: LinkStyle, isCurrent: () => boolean) => Promise<StyleCommitResult>,
+    private onReset: (isCurrent: () => boolean) => Promise<StyleCommitResult>,
   ) {
     super(app);
   }
 
   /** Render the ontology-link style controls with localized captions and feedback; the native Modal owns its open/close shell. */
   onOpen(): void {
+    this.beginEditor();
     this.titleEl.setText(this.translate("styles.linkEditorTitle", { field: this.fieldName }));
     this.modalEl.addClass("kplex-style-editor-modal");
     this.contentEl.addClass("kplex-style-editor");
@@ -1098,15 +1199,15 @@ class OntologyLinkStyleModal extends Modal {
     const actions = this.contentEl.createDiv({ cls: "kplex-style-actions" });
     const reset = actions.createEl("button", { cls: "mod-warning", text: this.translate("styles.reset") });
     appendIcon(reset, "rotate-ccw");
-    reset.addEventListener("click", () => {
-      void this.onReset().then(() => this.close());
+    reset.addEventListener("click", /** Reset only after one durable operation, using the shared pending/error contract. */ () => {
+      this.runOperation(/** Retain this form's lifetime through the queued reset. */ isCurrent => this.onReset(isCurrent));
     });
     const cancel = actions.createEl("button", { text: this.translate("common.cancel") });
     appendIcon(cancel, "x");
     cancel.addEventListener("click", () => this.close());
     const save = actions.createEl("button", { cls: "mod-cta", text: this.translate("common.save") });
     appendIcon(save, "check");
-    save.addEventListener("click", () => {
+    save.addEventListener("click", /** Capture one appearance override for the durable style owner. */ () => {
       const style: LinkStyle = {
         ...this.initialStyle,
         strokeColor: eightHex(strokeColor.value),
@@ -1118,11 +1219,13 @@ class OntologyLinkStyleModal extends Modal {
         textColor: eightHex(textColor.value),
         fontSize: Math.max(7, Math.min(24, Number(fontSize.value) || 10)),
       };
-      void this.onSave(style).then(() => this.close());
+      this.runOperation(/** Keep completion bound to this exact native form. */ isCurrent => this.onSave(style, isCurrent));
     });
   }
 
+  /** Retire asynchronous operations before removing the native controls. */
   onClose(): void {
+    super.onClose();
     this.contentEl.empty();
   }
 }
@@ -1656,11 +1759,10 @@ export class KplexSettingTab extends PluginSettingTab {
       this.app, name, name ? styles[name] ?? {} : {}, settings.noteTypeField,
       this.nodeStyleValueSuggestions(),
       /** Save to the selected family, retaining existing imported tag order and unrelated styles. */
-      async (nextName, nextStyle, previousName, selectedKind) => {
-        const currentSettings = this.kplexPlugin.settings;
+      async (nextName, nextStyle, previousName, selectedKind, isCurrent) => this.commitStyleChange(/** Prepare only this queued edit; a disk failure cannot change live styles. */ currentSettings => {
         const target = selectedKind === "tag" ? currentSettings.tagNodeStyles : currentSettings.noteTypeStyles;
         const normalizedValue = selectedKind === "tag" ? normalizeTagStylePrefix(nextName) : normalizeNodeStyleValue(nextName);
-        if (!normalizedValue) return;
+        if (!normalizedValue) throw new Error("Invalid style name");
         const normalizedNext = selectedKind === "tag" && previousName !== null && nextName === previousName ? previousName : normalizedValue;
         if (previousName && previousName !== normalizedNext) delete target[previousName];
         target[normalizedNext] = nextStyle;
@@ -1669,22 +1771,29 @@ export class KplexSettingTab extends PluginSettingTab {
           currentSettings.tagStyleList = currentSettings.tagStyleList.map(/** Preserve each existing priority slot. */ (key) => key === previousName ? normalizedNext : key);
           if (!currentSettings.tagStyleList.includes(normalizedNext)) currentSettings.tagStyleList.push(normalizedNext);
         }
-        await this.kplexPlugin.saveSettings(false);
-        afterChange?.();
-        this.update();
-      },
+      }, isCurrent, afterChange),
       /** Delete from the fixed edited family without affecting an equally named other-family style. */
-      async (removeName) => {
-        const currentSettings = this.kplexPlugin.settings;
+      async (removeName, isCurrent) => this.commitStyleChange(/** Delete within the latest queued family without restoring unrelated preferences. */ currentSettings => {
         const target = kind === "tag" ? currentSettings.tagNodeStyles : currentSettings.noteTypeStyles;
         delete target[removeName];
         if (kind === "tag") currentSettings.tagStyleList = currentSettings.tagStyleList.filter(/** Remove only the deleted prefix's matching slots. */ (key) => key !== removeName);
-        await this.kplexPlugin.saveSettings(false);
-        afterChange?.();
-        this.update();
-      },
+      }, isCurrent, afterChange),
       kind,
     ).open();
+  }
+
+  /** Durable completion is authoritative; manager/settings failures become saved recovery hints and retired dialogs cannot refresh UI. */
+  private async commitStyleChange(edit: (draft: StyleSettingsDraft) => void, isCurrent: () => boolean, afterChange?: () => void): Promise<StyleCommitResult> {
+    const result = await this.kplexPlugin.updateStyleSettings(edit);
+    if (!isCurrent()) return result;
+    let refreshPending = result.refreshPending;
+    for (const refresh of [afterChange, /** Refresh only this still-mounted native Settings page. */ () => { if (this.containerEl.isConnected) this.update(); }]) {
+      try { refresh?.(); } catch (error) {
+        console.error("K-Plex saved style manager refresh failed", error);
+        refreshPending = true;
+      }
+    }
+    return { refreshPending };
   }
 
   /** Collect both families in one indexed-page pass, without note-body reads or semantic work. */
@@ -1773,6 +1882,7 @@ export class KplexSettingTab extends PluginSettingTab {
     return this.kplexPlugin.settings.hierarchyLinkStyles[key] ?? this.kplexPlugin.settings.hierarchyLinkStyles[fieldName];
   }
 
+  /** Edit/reset an ontology appearance override through the same durable owner as node styles. */
   private openOntologyLinkStyleEditor(fieldName: string, afterChange?: () => void): void {
     const key = normalizeOntologyStyleKey(fieldName);
     const style = this.ontologyLinkStyle(fieldName) ?? {};
@@ -1781,22 +1891,16 @@ export class KplexSettingTab extends PluginSettingTab {
       fieldName,
       style,
       this.kplexPlugin.settings.baseLinkStyle,
-      async (nextStyle) => {
+      async (nextStyle, isCurrent) => this.commitStyleChange(/** Preserve other ontology overrides while committing this normalized key. */ draft => {
         // Normalize keys on write so aliases/casing in the ontology definition do not create
         // duplicate style entries for the same semantic property.
-        delete this.kplexPlugin.settings.hierarchyLinkStyles[fieldName];
-        this.kplexPlugin.settings.hierarchyLinkStyles[key] = nextStyle;
-        await this.kplexPlugin.saveSettings(false);
-        afterChange?.();
-        this.update();
-      },
-      async () => {
-        delete this.kplexPlugin.settings.hierarchyLinkStyles[fieldName];
-        delete this.kplexPlugin.settings.hierarchyLinkStyles[key];
-        await this.kplexPlugin.saveSettings(false);
-        afterChange?.();
-        this.update();
-      },
+        delete draft.hierarchyLinkStyles[fieldName];
+        draft.hierarchyLinkStyles[key] = nextStyle;
+      }, isCurrent, afterChange),
+      async isCurrent => this.commitStyleChange(/** Remove only this field's two compatible spellings. */ draft => {
+        delete draft.hierarchyLinkStyles[fieldName];
+        delete draft.hierarchyLinkStyles[key];
+      }, isCurrent, afterChange),
     ).open();
   }
 

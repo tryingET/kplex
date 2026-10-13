@@ -9,6 +9,10 @@
  * parameters remain unquoted regardless of their names. Locale catalogs inherit this classification.
  */
 export const englishCatalog = {
+  "styles.operation.saving": { message: "Saving… Please wait before closing.", context: "Style save/delete/reset is pending; Cancel, Escape and repeated submissions are excluded.", params: [] },
+  "styles.operation.close": { message: "Close", context: "Dismiss a style editor after its change is already durable; this action cannot undo the save.", params: [] },
+  "styles.operation.notSaved": { message: "Not saved. Your draft is kept. Try again or cancel.", context: "Style storage failed before live publication; the editor stays open for safe retry.", params: [] },
+  "styles.operation.savedRefreshPending": { message: "Style saved. Reopen settings or reload K-Plex to refresh its display.", context: "Style save/delete/reset is durable but presentation or manager refresh failed; never offer a destructive retry.", params: [] },
   "graph.evidenceFieldDecision": {message:"{field} — {resolution}",context:"Actual ontology field reference in a connector evidence hint; source-kind labels use separate descriptive keys.",params:["field","resolution"],referenceParams:["field"]},
   "graph.evidenceFieldDecisionOverridden": {message:"{field} — {resolution} · overridden",context:"Actual overridden ontology field reference in a connector evidence hint.",params:["field","resolution"],referenceParams:["field"]},
   "delete.cleanup.inspectFailed": {message:"Could not inspect the current source: {path}. Earlier saved changes are kept; review this note manually.",context:"Inspection failure after possible committed deletion/source writes.",params:["path"], referenceParams: ["path"]},

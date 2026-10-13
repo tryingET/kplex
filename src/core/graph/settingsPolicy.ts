@@ -121,6 +121,14 @@ export function classifySettingsChange(before: SettingsPolicy, after: SettingsPo
   return effectsForKeys(SETTING_DIAGNOSTIC_KEYS.filter((key) => before.values[key] !== after.values[key]));
 }
 
+/** Style dictionaries and their matching order change presentation without invalidating requested semantic coverage. Mixed changes retain their existing refresh policy. */
+export function isStyleOnlySettingsChange(effects: SettingsEffects): boolean {
+  return effects.changedKeys.length > 0 && effects.changedKeys.every(
+    /** Restrict the exception to the keys edited by the node and ontology style managers. */
+    key => key === "noteTypeStyles" || key === "tagNodeStyles" || key === "tagStyleList" || key === "hierarchyLinkStyles",
+  );
+}
+
 /** Filter twice at trust boundaries; custom field names and values must never be exported. */
 export function sanitizeChangedSettingKeys(value: unknown): SettingDiagnosticKey[] {
   if (!Array.isArray(value)) return [];

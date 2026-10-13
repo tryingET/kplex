@@ -1,5 +1,7 @@
 /**
  * Touched canonical physical facets retire their cached exact-pair facade before selected reads.
+ * Exact-pair preparation fences its full compiler presentation input until publication; retained
+ * source/write authority thereafter follows the canonical semantic signature independently of styles.
  * Published graph repository for K-Plex. Eager sessions retain global source adoption; on-demand
  * sessions publish a body-free host baseline, then canonicalize bounded direct owners without global
  * inventory. Host-only count covers separate available local numbers from semantic/write authority;
@@ -5739,7 +5741,7 @@ export class GraphIndex {
 
   /** Exact selected endpoints and private staged evidence close at the final current-policy/source fence. */
   private async prepareRelationshipPairOwned(sourcePath: string, targetPath: string, provisionalTarget?: GraphPage): Promise<boolean> {
-    const requestedPolicy = this.semanticPolicyRevision, requestedSettings = JSON.stringify(graphCompilerSettingsFromLegacy(this.plugin.settings));
+    const requestedPolicy = this.semanticPolicyRevision, requestedSettings = computeIndexSettingsSignature(this.plugin.settings);
     // Creation supplies only an explicit unbound URL/ghost coordinate. It remains private negative
     // coverage until the established creator inserts that endpoint after its successful vault write.
     if (provisionalTarget && (provisionalTarget.path !== targetPath || provisionalTarget.file
@@ -5752,7 +5754,7 @@ export class GraphIndex {
         cache: page.file!.extension === "md" ? this.app.metadataCache.getFileCache(page.file!) : null }));
     /** The caller's selected physical identity and policy cannot silently become a replacement file/action. */
     const requestedCurrent = (): boolean => this.semanticPolicyRevision === requestedPolicy
-      && JSON.stringify(graphCompilerSettingsFromLegacy(this.plugin.settings)) === requestedSettings
+      && computeIndexSettingsSignature(this.plugin.settings) === requestedSettings
       && originalPhysical.every(token => this.app.vault.getFileByPath(token.path) === token.file
         && fileRevisionMatches(token.file, token.revision)
         && (token.file.extension !== "md" || this.app.metadataCache.getFileCache(token.file) === token.cache));
@@ -5770,11 +5772,11 @@ export class GraphIndex {
         /** Borrow exact native identities; no inferred mtime or whole graph capture grants authority. */
         page => ({ path: page.path, file: page.file!, revision: captureFileRevision(page.file!),
           cache: page.file!.extension === "md" ? this.app.metadataCache.getFileCache(page.file!) : null }));
-      /** Physical replacements, actual policy/source edits and publication supersession cancel the whole private pair. */
+      /** Physical/source/semantic changes always retire authority. Private compilation also fences its presentation inputs; published relations survive style-only refreshes. */
       const current = (): boolean => requestedCurrent() && !this.diagnosticsClosed && !this.pendingStructuralTasks
         && policyRevision === this.semanticPolicyRevision && sourceRevision === this.plugin.getIndexSourceRevision()
         && (pairPublished || publicationRevision === this.publicationRevision)
-        && signature === JSON.stringify(graphCompilerSettingsFromLegacy(this.plugin.settings))
+        && (pairPublished || signature === JSON.stringify(graphCompilerSettingsFromLegacy(this.plugin.settings)))
         && physical.every(
           /** Every selected physical endpoint retains its exact observation through publication and writes. */
           token => this.app.vault.getFileByPath(token.path) === token.file && fileRevisionMatches(token.file, token.revision)

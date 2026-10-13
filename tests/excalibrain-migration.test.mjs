@@ -10,14 +10,25 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import ts from "typescript";
 import { assertMigratedExcaliBrainSettings, localPreferenceKeys } from "./support/excalibrainMigration.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fixture = JSON.parse(readFileSync(join(root, "tests/fixtures/excalibrain-migration/data.json"), "utf8"));
 const temp = mkdtempSync(join(tmpdir(), "kplex-migration-"));
 process.on("exit", () => rmSync(temp, { recursive: true, force: true }));
+/** Extract the production durable owner rather than substituting a successful style save. */
+function styleHostSource() {
+  const source = ts.createSourceFile("main.ts", readFileSync(join(root, "src/main.ts"), "utf8"), ts.ScriptTarget.Latest, true);
+  const names = new Set(["updateStyleSettings", "saveSettings", "enqueueSettingsWrite", "settingsSnapshotForPersistence", "persistSettingsSnapshot"]);
+  const methods = [];
+  /** Preserve actual queue/classifier/commit method bodies with their original await boundaries. */
+  const visit = node => { if (ts.isMethodDeclaration(node) && names.has(node.name.getText(source))) methods.push(node.getText(source)); ts.forEachChild(node, visit); };
+  visit(source); assert.equal(methods.length, names.size);
+  return 'import {captureSettingsPolicy,classifySettingsChange,isStyleOnlySettingsChange} from "./src/core/graph/settingsPolicy"; export class StyleSettingsHost {' + methods.join('\n') + '}';
+}
 await build({
-  stdin: { contents: 'export * from "./src/settings"; export * from "./src/core/graph/settingsPolicy"; export * from "./src/index/style"; export * from "./src/ui/layout"; export * from "./src/ui/PurgeIndexCacheModal"; export { Modal as TestModal, AbstractInputSuggest as TestSuggest } from "obsidian"; export { createObsidianTranslator } from "./src/adapters/obsidian/localization";', resolveDir: root },
+  stdin: { contents: styleHostSource() + '\nexport * from "./src/settings"; export * from "./src/core/graph/settingsPolicy"; export * from "./src/index/style"; export * from "./src/ui/layout"; export * from "./src/ui/PurgeIndexCacheModal"; export { Modal as TestModal, Notice as TestNotice, AbstractInputSuggest as TestSuggest } from "obsidian"; export { createObsidianTranslator } from "./src/adapters/obsidian/localization";', resolveDir: root, loader: "ts" },
   outfile: join(temp, "migration.mjs"), bundle: true, platform: "node", format: "esm",
   plugins: [{ name: "obsidian-boundary-double", setup(builder) {
     builder.onResolve({ filter: /^obsidian$/ }, () => ({ path: "obsidian", namespace: "double" }));
@@ -29,7 +40,7 @@ await build({
       class FormElement {
         constructor(tag = "div", options = {}) {
           this.tag = tag; this.children = []; this.buttons = []; this.listeners = {}; this.value = options.value ?? "";
-          this.text = options.text ?? ""; this.attrs = {}; this.visible = true;
+          this.text = options.text ?? ""; this.attrs = {}; this.visible = true; this.disabled = false; this.isConnected = true; this.ownerDocument = { defaultView: globalThis.window };
           const classes = new Set((options.cls ?? "").split(" ").filter(Boolean));
           this.classList = { add(...names) { names.forEach(name => classes.add(name)); }, remove(...names) { names.forEach(name => classes.delete(name)); }, contains(name) { return classes.has(name); } };
           Object.entries(options.attr ?? {}).forEach(([name, value]) => this.setAttribute(name, value));
@@ -41,12 +52,15 @@ await build({
         appendChild(child) { if (child.parent) child.parent.children = child.parent.children.filter(item => item !== child); this.children.push(child); child.parent = this; }
         prepend(child) { this.appendChild(child); this.children = [child, ...this.children.filter(item => item !== child)]; }
         setText(text) { this.text = text; }
+        get tagName() { return this.tag.toUpperCase(); }
+        get textContent() { return this.text; }
         setAttribute(name, value) { this.attrs[name] = value; if (name === "type") this.type = value; }
         setCssProps() {}
         toggle(value) { this.visible = value; }
         focus() { this.focused = true; }
         addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); }
         dispatchEvent(event) { for (const fn of this.listeners[event.type] ?? []) fn(event); return true; }
+        querySelectorAll(selector) { const tags = selector.split(", "); const visit = el => el.children.flatMap(child => [...(tags.includes(child.tag) ? [child] : []), ...visit(child)]); return visit(this); }
         empty() { this.children = []; this.buttons = []; }
       }
       export class ButtonComponent {} export class Modal {
@@ -54,7 +68,7 @@ await build({
         open() { this.onOpen?.(); }
         close() { this.closed = true; this.onClose?.(); }
       }
-      export class Notice {}
+      export class Notice { static messages = []; constructor(message) { Notice.messages.push(message); } }
       export class Setting {
         constructor(container) { this.container = container; }
         addButton(cb) {
@@ -69,13 +83,13 @@ await build({
         close() { this.closed = true; }
       }
       export class SearchComponent {} export const setIcon = () => {}; export const setTooltip = () => {};
-      export class PluginSettingTab { constructor(app) { this.app = app; this.containerEl = { addClass() {} }; } }
+      export class PluginSettingTab { constructor(app) { this.app = app; this.containerEl = { addClass() {}, isConnected: true }; } }
       export const getIcon = () => null; export const getIconIds = () => []; export const getLanguage = () => "en";
     `, loader: "js" }));
   } }],
 });
 const { migrateAndMergeSettings, importExcaliBrainGraphSettings, KplexSettingTab, resolveNodeStyle, resolveLinkStyle, buildScene, PurgeIndexCacheModal,
-  captureSettingsPolicy, classifySettingsChange, encodeIndexSettingsSignature, TestModal, TestSuggest, createObsidianTranslator } = await import(pathToFileURL(join(temp, "migration.mjs")));
+  captureSettingsPolicy, classifySettingsChange, encodeIndexSettingsSignature, TestModal, TestNotice, TestSuggest, createObsidianTranslator, StyleSettingsHost } = await import(pathToFileURL(join(temp, "migration.mjs")));
 const defaults = migrateAndMergeSettings(undefined);
 const migrated = importExcaliBrainGraphSettings(fixture);
 
@@ -466,10 +480,11 @@ async function activate(element, type = "click") {
 /** Supply indexed hints and observe appearance-only saves without substituting the production editor. */
 function styleEditorFixture(settings = structuredClone(defaults)) {
   const saves = [];
-  const plugin = { settings, saveSettings: async (...args) => { saves.push(args); }, index: { allPages: () => [
+  const plugin = Object.assign(new StyleSettingsHost(), { settings, settingsWriteQueue: Promise.resolve(), savedSettingsPolicy: captureSettingsPolicy(settings),
+    saveData: async snapshot => { saves.push(structuredClone(snapshot)); }, index: { refreshPresentationSettings: async () => {}, refreshSemanticSettings: async () => { throw new Error("Style-only save acquired semantics"); }, allPages: () => [
     { noteType: "Project", tags: ["#project/active", "project/backlog"] },
     { noteType: "Person", tags: ["#person"] },
-  ] } };
+  ] } });
   plugin.translator = createObsidianTranslator();
   const tab = new KplexSettingTab({}, plugin);
   tab.update = () => {};
@@ -529,7 +544,7 @@ test("new node style explicitly selects a tag prefix and preserves the appearanc
   const effective = resolveNodeStyle({ primaryStyleTag: "#project/backlog/task", styleTags: [], file: { extension: "md" }, noteType: null }, null, "center", settings);
   assert.equal(effective.icon, "briefcase"); assert.equal(effective.backgroundColor, "#123456ff");
   assert.equal(suggest.closed, true);
-  assert.deepEqual(saves, [[false]]);
+  assert.equal(saves.length, 1);
   assert.match(elements.find(element => element.tag === "p").text, /primary style tag/);
 });
 
@@ -578,7 +593,7 @@ test("empty tag prefixes cannot save and property suggestions retain property no
   await activate(propertyElements.find(element => element.text === "Save"));
   assert(settings.noteTypeStyles["project/backlog"]);
   assert.deepEqual(settings.tagStyleList, ["#new/prefix"]);
-  assert.deepEqual(saves, [[false], [false]]);
+  assert.equal(saves.length, 2);
 });
 
 test("editing imported tag styles retains family, exact unchanged keys, appearance and first-match priority", async () => {
@@ -612,7 +627,7 @@ test("editing imported tag styles retains family, exact unchanged keys, appearan
   assert.deepEqual(settings.tagStyleList, [...beforeOrder.filter(key => key !== "old-prefix"), "#fresh"]);
   assert.equal(settings.tagNodeStyles["#new-prefix"], undefined);
   assert.deepEqual(settings.noteTypeStyles["old-prefix"], { icon: "user" });
-  assert.deepEqual(saves, [[false], [false], [false], [false]]);
+  assert.equal(saves.length, 4);
 });
 
 
@@ -652,9 +667,178 @@ test("style callbacks target current settings and existing property edits keep p
   assert.equal(finalSettings.tagNodeStyles["#fresh"], undefined);
   assert.deepEqual(finalSettings.tagStyleList, ["#retained"]);
   assert(replacement.tagNodeStyles["#fresh"]);
-  assert.deepEqual(saves, [[false], [false], [false]]);
+  assert.equal(saves.length, 3);
 });
 
+
+/** Hold the real storage/refresh await boundary without changing the production operation. */
+function deferred() { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
+
+test("style save excludes duplicate submissions and Cancel/Escape until persistence; unrelated preferences survive", async () => {
+  const { tab, settings, plugin, saves } = styleEditorFixture();
+  const disk = deferred(); plugin.saveData = async snapshot => { saves.push(structuredClone(snapshot)); await disk.promise; };
+  const modal = openStyle(tab, "property"); const elements = formElements(modal);
+  const name = elements.find(e => e.attrs["aria-label"] === "Note type"); name.value = "Project";
+  const save = elements.find(e => e.text === "Save");
+  await activate(save); await activate(save); await activate(elements.find(e => e.text === "Cancel")); modal.close();
+  assert.equal(saves.length, 1); assert.equal(modal.closed, undefined); assert.equal(modal.modalEl.attrs["aria-busy"], "true");
+  assert(elements.filter(e => ["input", "select", "button"].includes(e.tag)).every(e => e.disabled));
+  assert.equal(settings.noteTypeStyles.Project, undefined, "Pending draft must not appear committed");
+  settings.backgroundColor = "#123456ff";
+  disk.resolve(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(modal.closed, true); assert(settings.noteTypeStyles.Project);
+  assert.equal(settings.backgroundColor, "#123456ff", "Never replace the whole settings snapshot");
+});
+
+test("failed style disk write keeps memory and policy unchanged, preserves the draft and permits one safe retry", async () => {
+  const { tab, settings, plugin, saves } = styleEditorFixture(); const policy = plugin.savedSettingsPolicy;
+  let calls = 0; plugin.saveData = async snapshot => { if (++calls === 1) throw new Error("Expected storage failure"); saves.push(structuredClone(snapshot)); };
+  const modal = openStyle(tab, "tag"); const elements = formElements(modal);
+  const name = elements.find(e => e.attrs["aria-label"] === "Tag"); name.value = "project";
+  const save = elements.find(e => e.text === "Save"); await activate(save);
+  assert.deepEqual(settings.tagNodeStyles, {}); assert.deepEqual(settings.tagStyleList, []); assert.equal(plugin.savedSettingsPolicy, policy);
+  assert.equal(modal.closed, undefined); assert.equal(save.disabled, false); assert.equal(name.value, "project");
+  assert.match(elements.find(e => e.attrs.role === "status").text, /Not saved.*draft is kept/);
+  await activate(save); assert.equal(modal.closed, true); assert.equal(calls, 2); assert.equal(saves.length, 1);
+  assert.deepEqual(settings.tagStyleList, ["#project"]); assert(settings.tagNodeStyles["#project"]);
+});
+
+test("durable style refresh failure and thrown manager callback close with truthful saved feedback", async () => {
+  for (const failure of ["presentation", "manager", "settings"]) {
+    const { tab, settings, plugin, saves } = styleEditorFixture(); TestNotice.messages.length = 0;
+    if (failure === "presentation") plugin.index.refreshPresentationSettings = async () => { throw new Error("Expected presentation failure"); };
+    if (failure === "settings") tab.update = () => { throw new Error("Expected settings failure"); };
+    const priorWindow = globalThis.window;
+    try { globalThis.window = { setTimeout: fn => { fn(); return 0; } }; tab.openNodeStyleEditor("property", null,
+      /** The real manager callback may throw after the successful disk commit. */ () => { if (failure === "manager") throw new Error("Expected manager failure"); });
+    } finally { globalThis.window = priorWindow; }
+    const modal = TestModal.latest, elements = formElements(modal); elements.find(e => e.attrs["aria-label"] === "Note type").value = "Saved";
+    await activate(elements.find(e => e.text === "Save"));
+    assert.equal(saves.length, 1); assert(settings.noteTypeStyles.Saved); assert.equal(modal.closed, true);
+    assert.equal(TestNotice.messages.length, 1); assert.match(TestNotice.messages[0], /Style saved/);
+  }
+});
+
+test("external teardown retires completion before a replacement editor opens", async () => {
+  const { tab, plugin, settings } = styleEditorFixture(); const disk = deferred(); let refreshes = 0;
+  plugin.saveData = async () => disk.promise; tab.update = () => { refreshes++; };
+  const old = openStyle(tab, "property"), elements = formElements(old); elements.find(e => e.attrs["aria-label"] === "Note type").value = "Old";
+  await activate(elements.find(e => e.text === "Save")); old.onClose();
+  const replacement = openStyle(tab, "tag"); disk.resolve(); await new Promise(resolve => setImmediate(resolve));
+  assert(settings.noteTypeStyles.Old, "An external teardown cannot cancel an already submitted write");
+  assert.equal(refreshes, 0); assert.equal(replacement.closed, undefined); assert.equal(replacement.modalEl.attrs["aria-busy"], "false");
+});
+
+test("a native close failure after persistence remains saved and cannot submit twice", async () => {
+  const { tab, settings, saves } = styleEditorFixture(); const modal = openStyle(tab, "property"), elements = formElements(modal);
+  elements.find(e => e.attrs["aria-label"] === "Note type").value = "Durable";
+  const close = modal.close; modal.close = () => { throw new Error("Expected native close failure"); };
+  const save = elements.find(e => e.text === "Save"); await activate(save);
+  assert(settings.noteTypeStyles.Durable); assert.equal(saves.length, 1); assert.equal(save.disabled, true);
+  assert.match(elements.find(e => e.attrs.role === "status").text, /Style saved/);
+  await activate(save); assert.equal(saves.length, 1, "Even programmatic redelivery cannot repeat a committed effect");
+  modal.close = close; const dismiss = elements.find(e => e.text === "Close"); assert.equal(dismiss.disabled, false); await activate(dismiss); assert.equal(modal.closed, true);
+});
+
+test("native RGB normalization and edited colors preserve imported alpha and absent appearance fields", async () => {
+  const { tab, settings } = styleEditorFixture(); settings.noteTypeStyles.Alpha = { backgroundColor: "#AABBCC80", textColor: "#FFEEDD66", borderColor: "#11223344" };
+  const modal = openStyle(tab, "property", "Alpha"), elements = formElements(modal);
+  elements.find(e => e.attrs["aria-label"] === "Background").value = "#aabbcc";
+  elements.find(e => e.attrs["aria-label"] === "Text").value = "#010203";
+  await activate(elements.find(e => e.text === "Save"));
+  assert.equal(settings.noteTypeStyles.Alpha.backgroundColor, "#AABBCC80");
+  assert.equal(settings.noteTypeStyles.Alpha.textColor, "#01020366");
+  assert.equal(settings.noteTypeStyles.Alpha.borderColor, "#11223344");
+  assert.equal(settings.noteTypeStyles.Alpha.fontSize, undefined); assert.equal(settings.noteTypeStyles.Alpha.prefix, undefined);
+});
+
+test("queued style editors merge latest committed families and preserve tag priority and action preferences", async () => {
+  const { plugin, settings } = styleEditorFixture(); const disk = deferred(); const snapshots = []; let calls = 0;
+  plugin.saveData = async snapshot => { snapshots.push(structuredClone(snapshot)); if (++calls === 1) await disk.promise; };
+  const first = plugin.updateStyleSettings(draft => { draft.tagNodeStyles["legacy"] = { icon: "box" }; draft.tagStyleList.push("legacy"); });
+  const second = plugin.updateStyleSettings(draft => { draft.noteTypeStyles.legacy = { icon: "info" }; draft.tagNodeStyles["#second"] = {}; draft.tagStyleList.push("#second"); });
+  await new Promise(resolve => setImmediate(resolve)); settings.actionPreferences = { schema: 1, marker: "new workflow" }; disk.resolve(); await Promise.all([first, second]);
+  assert.deepEqual(settings.tagStyleList, ["legacy", "#second"]); assert.equal(settings.noteTypeStyles.legacy.icon, "info");
+  assert.equal(snapshots[1].tagNodeStyles.legacy.icon, "box"); assert.equal(snapshots[1].actionPreferences.marker, "new workflow");
+  assert.equal(snapshots[1].actionPreferencesFuture, undefined);
+});
+
+test("delete failure never removes live style; retry removes only its fixed family and matching slots", async () => {
+  const { plugin, tab, settings } = styleEditorFixture(); settings.tagNodeStyles.same = { icon: "box" }; settings.noteTypeStyles.same = { icon: "info" }; settings.tagStyleList = ["before", "same", "after", "same"];
+  let fail = true; plugin.saveData = async () => { if (fail) throw new Error("Expected delete failure"); };
+  const modal = openStyle(tab, "tag", "same"), remove = formElements(modal).find(e => e.text === "Delete"); await activate(remove);
+  assert(settings.tagNodeStyles.same); assert.deepEqual(settings.tagStyleList, ["before", "same", "after", "same"]);
+  assert.equal(formElements(modal).find(e => e.tag === "select").disabled, true, "Fixed family remains locked after failure");
+  fail = false; await activate(remove); assert.equal(modal.closed, true); assert.equal(settings.tagNodeStyles.same, undefined);
+  assert.equal(settings.noteTypeStyles.same.icon, "info"); assert.deepEqual(settings.tagStyleList, ["before", "after"]);
+});
+
+test("a later live priority edit wins its queued write without an older style draft restoring the list", async () => {
+  const { plugin, settings, saves } = styleEditorFixture(); const disk = deferred(); let calls = 0;
+  plugin.saveData = async snapshot => { saves.push(structuredClone(snapshot)); if (++calls === 1) await disk.promise; };
+  const first = plugin.updateStyleSettings(draft => { draft.tagNodeStyles["#captured"] = {}; draft.tagStyleList.push("#captured"); });
+  await new Promise(resolve => setImmediate(resolve)); settings.tagStyleList = ["#new-priority"];
+  const later = plugin.saveSettings(false, false); disk.resolve(); await Promise.all([first, later]);
+  assert.deepEqual(settings.tagStyleList, ["#new-priority"]); assert.deepEqual(saves.at(-1).tagStyleList, ["#new-priority"]);
+  assert(settings.tagNodeStyles["#captured"], "Unchanged family still receives its earlier durable style commit");
+});
+
+test("a later settings import cannot be overwritten by an older pending style dictionary", async () => {
+  const { plugin, settings, saves } = styleEditorFixture(); const disk = deferred(); let calls = 0;
+  plugin.saveData = async snapshot => { saves.push(structuredClone(snapshot)); if (++calls === 1) await disk.promise; };
+  const first = plugin.updateStyleSettings(draft => { draft.noteTypeStyles.Older = { icon: "box" }; });
+  await new Promise(resolve => setImmediate(resolve)); const replacement = structuredClone(settings); replacement.noteTypeStyles = { Imported: { icon: "info" } };
+  plugin.settings = replacement; const later = plugin.saveSettings(false, false); disk.resolve(); await Promise.all([first, later]);
+  assert.deepEqual(replacement.noteTypeStyles, { Imported: { icon: "info" } }); assert.deepEqual(saves.at(-1).noteTypeStyles, replacement.noteTypeStyles);
+  assert.deepEqual(settings.noteTypeStyles, {}, "Never publish the commit back into a retired settings object");
+});
+
+test("style persistence preserves future action preferences and immediate remote-image revocation across overlapping saves", async () => {
+  const base = structuredClone(defaults); base.allowRemoteNodeImages = true; base.actionPreferencesFuture = { schema: 900, marker: "preserved future" };
+  const { plugin, settings, saves } = styleEditorFixture(base); const disk = deferred(); let calls = 0, revocations = 0, notifications = 0;
+  plugin.index.invalidateNodeVisuals = () => { revocations++; }; plugin.index.notifyPresentation = () => { notifications++; };
+  plugin.saveData = async snapshot => { saves.push(structuredClone(snapshot)); if (++calls === 1) await disk.promise; };
+  const style = plugin.updateStyleSettings(draft => { draft.noteTypeStyles.Project = {}; }); await new Promise(resolve => setImmediate(resolve));
+  settings.allowRemoteNodeImages = false; const consent = plugin.saveSettings(false, false);
+  assert.equal(revocations, 1); assert.equal(notifications, 1); assert.equal(settings.allowRemoteNodeImages, false);
+  disk.resolve(); await Promise.all([style, consent]);
+  assert.equal(saves.at(-1).allowRemoteNodeImages, false); assert.deepEqual(saves.at(-1).actionPreferences, base.actionPreferencesFuture);
+  assert.equal(saves.at(-1).actionPreferencesFuture, undefined); assert(settings.noteTypeStyles.Project);
+});
+
+test("mutating an existing queued appearance draft cannot leak into memory after a rejected write", async () => {
+  const { plugin, settings } = styleEditorFixture(); settings.noteTypeStyles.Existing = { icon: "box" };
+  plugin.saveData = async () => { throw new Error("Expected draft storage rejection"); };
+  await assert.rejects(plugin.updateStyleSettings(draft => { draft.noteTypeStyles.Existing.icon = "info"; }), /Expected draft storage rejection/);
+  assert.equal(settings.noteTypeStyles.Existing.icon, "box");
+});
+
+test("a publication exception after storage is a saved recovery outcome, never a rejected retry", async () => {
+  const { plugin, settings, saves } = styleEditorFixture();
+  plugin.saveData = async snapshot => { saves.push(structuredClone(snapshot)); Object.freeze(settings); };
+  assert.deepEqual(await plugin.updateStyleSettings(draft => { draft.noteTypeStyles.Durable = {}; }), { refreshPending: true });
+  assert(saves[0].noteTypeStyles.Durable); assert.equal(settings.noteTypeStyles.Durable, undefined);
+});
+
+test("Cancel before submission has no durable or live style effects", async () => {
+  const { tab, settings, saves } = styleEditorFixture(); const modal = openStyle(tab, "property");
+  await activate(formElements(modal).find(e => e.text === "Cancel")); assert.equal(modal.closed, true); assert.deepEqual(settings.noteTypeStyles, {}); assert.equal(saves.length, 0);
+});
+
+test("relationship style Save/Reset use the same duplicate and failure contract", async () => {
+  const { tab, plugin, settings, saves } = styleEditorFixture(); settings.hierarchyLinkStyles.parent = { strokeWidth: 3 };
+  const disk = deferred(); plugin.saveData = async snapshot => { saves.push(structuredClone(snapshot)); await disk.promise; };
+  tab.openOntologyLinkStyleEditor("Parent"); const modal = TestModal.latest, elements = formElements(modal), reset = elements.find(e => e.text === "Reset");
+  assert(reset); await activate(reset); await activate(reset); assert.equal(saves.length, 1); assert.equal(settings.hierarchyLinkStyles.parent.strokeWidth, 3);
+  disk.resolve(); await new Promise(resolve => setImmediate(resolve)); assert.equal(modal.closed, true); assert.equal(settings.hierarchyLinkStyles.parent, undefined);
+});
+
+test("compatibility saves skip semantics only for style-only edits; mixed view changes retain requested-scope refresh", async () => {
+  const { plugin, settings } = styleEditorFixture(); let semantic = 0; plugin.index.refreshSemanticSettings = async () => { semantic++; };
+  settings.noteTypeStyles.Project = { icon: "box" }; await plugin.saveSettings(false); assert.equal(semantic, 0);
+  settings.tagStyleList.push("#work"); settings.tagNodeStyles["#work"] = {}; await plugin.saveSettings(false); assert.equal(semantic, 0);
+  settings.hierarchyLinkStyles.parent = { strokeWidth: 4 }; settings.renderSiblings = !settings.renderSiblings; await plugin.saveSettings(false); assert.equal(semantic, 1);
+});
 
 test("explicit normalized link-style keys take precedence over legacy display names", () => {
   const settings = structuredClone(migrated);

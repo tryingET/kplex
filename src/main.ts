@@ -1,7 +1,10 @@
 /**
  * Obsidian plugin lifecycle and host orchestration for indexing, navigation and vault mutations. Portable owners determine semantics; this host boundary supplies effects, cleanup and localized product feedback. Native metadata events request finite visible presentation repair independently of semantic readiness. Passive document synchronization preserves the current representation of exact matching native destinations; explicit opening and source inspection retain their separate navigation contracts. Support reporting projects retained facts without starting index work; this lifetime owns its bounded recorder and native report dialogs. Per-note Markdown zoom preferences follow Vault rename/delete events independently of index readiness.
  * Remote node image consent publishes synchronously before persistence and never requests semantics.
+ * Style-manager drafts commit on the settings disk queue before live publication; style-only
+ * completion refreshes cached presentation without clearing or reacquiring semantic scopes.
  * Surface registration releases menus in its captured rendering document before migration/close retires that realm.
+ * Linked-tab follow delegates managed companions to the Sidecar request owner so parallel App observations cannot reopen one destination twice.
  * Deletion captures bounded pre-trash property/body approval, writes only confirmed fields and retains
  * partial commits. Deletion Hidden covers captured resolved spellings and observed native unresolved
  * coordinates without guessing identities. Additive Hidden consent shares coherent source publication;
@@ -10,10 +13,10 @@
  * Folder/tag notices supply complete literal references to the shared localization formatter.
  */
 import { FileView, MarkdownView, Menu, Notice, Platform, Plugin, TFile, TFolder, apiVersion, getLanguage, getAllTags, normalizePath, setIcon, type Editor, type HoverParent, type WorkspaceLeaf } from "obsidian";
-import { captureSettingsPolicy, classifySettingsChange, type SettingsPolicy } from "./core/graph/settingsPolicy";
+import { captureSettingsPolicy, classifySettingsChange, isStyleOnlySettingsChange, type SettingsPolicy } from "./core/graph/settingsPolicy";
 import { removeMarkdownZoomModes, renameMarkdownZoomModes } from "./core/plex/markdownZoomPreferences";
 import { GraphIndex } from "./index/GraphIndex";
-import { DEFAULT_SETTINGS, KplexSettingTab, migrateAndMergeSettings, importExcaliBrainGraphSettings, type DocumentSyncMode, type KplexSettings, type KplexLayoutProfile, type KplexViewSurface, type SidecarPosition } from "./settings";
+import { DEFAULT_SETTINGS, KplexSettingTab, migrateAndMergeSettings, importExcaliBrainGraphSettings, type DocumentSyncMode, type KplexSettings, type KplexLayoutProfile, type KplexViewSurface, type SidecarPosition, type StyleSettingsDraft, type StyleCommitResult } from "./settings";
 import { KPLEX_VIEW_TYPE, KPLEX_SIDEPANEL_VIEW_TYPE, KplexView, KplexSidepanelView } from "./ui/KplexView";
 import { RelationModal, type RelationModalOptions } from "./ui/RelationModal";
 import { NewRelatedNoteModal, type RelatedNoteInvocation } from "./ui/NewRelatedNoteModal";
@@ -154,13 +157,16 @@ export default class KplexPlugin extends Plugin {
   private startupIndexInfoBubbleClaimed = false;
   private snapshotRestoreTask: Promise<{ restored: boolean; fresh: boolean; createdAt: number | null; partial?: boolean }> | null = null;
   private readonly sidecarLeaves = new Map<WorkspaceLeaf, WorkspaceLeaf>();
-  /** A newer passive target retires awaited mode/persistence work for this exact Sidecar host. */
+  /** One managed leaf serializes native opens; newer targets retire queued mode/persistence and known older file-open echoes. */
   private readonly passiveSidecarSyncRequests = new WeakMap<WorkspaceLeaf, {
     leaf: WorkspaceLeaf;
     file: TFile | null;
     filePath: string | undefined;
     url: string | null;
     pending: boolean;
+    nativeCompletion: Promise<void>;
+    nativeFile: TFile | null;
+    previousNativeFile: TFile | null;
   }>();
   private sidecarRestoreTask: Promise<void> | null = null;
   private readonly sidecarMovingHosts = new Set<WorkspaceLeaf>();
@@ -1494,8 +1500,8 @@ export default class KplexPlugin extends Plugin {
   }
 
   /** Omit runtime recovery markers while retaining the actual future schema in its original field. */
-  private settingsSnapshotForPersistence(actionPreferences: unknown): Record<string, unknown> {
-    const { actionPreferencesFuture: _runtimeFuture, ...settings } = this.settings;
+  private settingsSnapshotForPersistence(actionPreferences: unknown, source: KplexSettings = this.settings): Record<string, unknown> {
+    const { actionPreferencesFuture: _runtimeFuture, ...settings } = source;
     return { ...settings, actionPreferences };
   }
 
@@ -1504,6 +1510,59 @@ export default class KplexPlugin extends Plugin {
     return this.enqueueSettingsWrite(/** Capture after earlier workflow saves have actually committed. */ () => this.saveData(
       this.settingsSnapshotForPersistence(this.settings.actionPreferencesFuture ?? this.settings.actionPreferences),
     ));
+  }
+
+  /**
+   * Commit a style-manager draft through the common disk queue before publishing its live fields.
+   * Each queued edit starts from the latest live styles at its serialized boundary; unrelated settings and action writes
+   * retain their owners. A storage rejection leaves memory unchanged. After persistence, refresh
+   * failure is a saved outcome with a recovery hint, never a destructive retry or semantic rebuild.
+   */
+  async updateStyleSettings(edit: (draft: StyleSettingsDraft) => void): Promise<StyleCommitResult> {
+    let persisted = false;
+    try { await this.enqueueSettingsWrite(/** Capture the latest live settings only when this edit owns the disk queue. */ async () => {
+      if (this.unloading) throw new Error("K-Plex is unloading");
+      const source = this.settings;
+      const before = captureSettingsPolicy(source);
+      const draft: StyleSettingsDraft = structuredClone({
+        noteTypeStyles: { ...source.noteTypeStyles }, tagNodeStyles: { ...source.tagNodeStyles },
+        tagStyleList: [...source.tagStyleList], hierarchyLinkStyles: { ...source.hierarchyLinkStyles },
+      });
+      edit(draft);
+      const next = { ...source, ...draft };
+      const policy = captureSettingsPolicy(next);
+      const effects = classifySettingsChange(before, policy);
+      await this.saveData(this.settingsSnapshotForPersistence(source.actionPreferencesFuture ?? source.actionPreferences, next));
+      persisted = true;
+      // Only this operation's style fields are published, never a stale whole-settings snapshot.
+      // Queued style editors see this commit before preparing their own drafts.
+      const current = captureSettingsPolicy(this.settings);
+      const values = { ...(this.savedSettingsPolicy ?? current).values };
+      for (const key of effects.changedKeys) {
+        // Legacy imports/controls publish live drafts before their own queued write. A later
+        // change to this field owns its next value; do not overwrite it with the older commit.
+        if (current.values[key] !== before.values[key]) continue;
+        if (key === "noteTypeStyles") this.settings.noteTypeStyles = draft.noteTypeStyles;
+        else if (key === "tagNodeStyles") this.settings.tagNodeStyles = draft.tagNodeStyles;
+        else if (key === "tagStyleList") this.settings.tagStyleList = draft.tagStyleList;
+        else if (key === "hierarchyLinkStyles") this.settings.hierarchyLinkStyles = draft.hierarchyLinkStyles;
+        values[key] = policy.values[key];
+      }
+      // Advance only the committed style projection; a concurrent semantic edit keeps its own fence.
+      this.savedSettingsPolicy = { values };
+    }); } catch (error) {
+      if (!persisted) throw error instanceof Error ? error : new Error(String(error));
+      console.error("K-Plex saved style publication failed", error);
+      return { refreshPending: true };
+    }
+    if (this.unloading) return { refreshPending: false };
+    try {
+      await this.index.refreshPresentationSettings();
+      return { refreshPending: false };
+    } catch (error) {
+      console.error("K-Plex saved style presentation refresh failed", error);
+      return { refreshPending: true };
+    }
   }
 
   /** Navigate to the declarative shortcut page, including when optional commands are unpublished. */
@@ -1708,8 +1767,9 @@ export default class KplexPlugin extends Plugin {
     await this.index.refreshPresentationSettings();
     if (effects.semanticInvalidation) await this.index.refreshSemanticSettings();
     // Device typography changes reuse the existing graph and cannot expand a requested scope.
-    // Preserve the legacy refresh for all other render changes, including mixed writes.
-    else if (effects.render && !effects.typographyOnly && !consentOnly) await this.index.refreshSemanticSettings();
+    // Style dictionaries/order also reuse semantic coverage. Preserve the legacy refresh
+    // for other render changes and mixed writes, which may change requested scopes.
+    else if (effects.render && !effects.typographyOnly && !consentOnly && !isStyleOnlySettingsChange(effects)) await this.index.refreshSemanticSettings();
     // Workflow-only callers can still request their historical view notification. Changed settings
     // use the separate presentation channel and never pretend relationship evidence changed.
     if ((!effects.render || effects.typographyOnly) && notifyIndex) this.index.notifyPresentation();
@@ -2450,6 +2510,7 @@ export default class KplexPlugin extends Plugin {
   private syncKplexToLeafEnabled(): boolean { return this.settings.documentSyncMode !== "off"; }
   private syncLeafToKplexEnabled(): boolean { return this.settings.documentSyncMode !== "off"; }
 
+  /** Follow an eligible native file, excluding a known superseded passive Sidecar echo; explicit opens retire that lease. */
   shouldFollowDocumentFile(file: TFile): boolean {
     if (this.startupInitializing) return false;
     const suppression = this.transientDocumentFollowSuppression;
@@ -2459,6 +2520,12 @@ export default class KplexPlugin extends Plugin {
     if (!this.syncLeafToKplexEnabled()) return false;
     this.validateLinkedDocumentLeaf();
     const leaf = this.settings.documentSyncMode === "pinned" ? this.linkedDocumentLeaf : this.findRecentDocumentLeaf();
+    for (const [host, sidecar] of this.sidecarLeaves) {
+      if (sidecar !== leaf) continue;
+      const request = this.passiveSidecarSyncRequests.get(host);
+      if (request?.pending && request.file !== file
+        && (request.nativeFile === file || request.previousNativeFile === file)) return false;
+    }
     return this.fileForLeaf(leaf)?.path === file.path;
   }
 
@@ -2573,13 +2640,24 @@ export default class KplexPlugin extends Plugin {
    * Follow the Plex center into its linked destination only when the exact file differs.
    * Same-file representation changes are observations, not reopening requests. Explicit Open
    * and one-shot synchronization use their existing independent methods and remain unconditional.
-   * There is no post-await mode/focus/persistence work that can outlive this captured request.
+   * Managed companions delegate to their existing latest-request owner; ordinary tabs have no
+   * post-await mode/focus/persistence work that can outlive this captured request.
    */
   async syncPageToDocumentLeaf(page: GraphPage): Promise<void> {
     if (this.unloading || !this.syncKplexToLeafEnabled() || !page.file
       || this.app.vault.getFileByPath(page.file.path) !== page.file) return;
     const leaf = this.targetNoteLeaf(true);
-    if (!leaf || !this.leafIsAttached(leaf) || this.leafDisplaysPage(leaf, page)) return;
+    if (!leaf || !this.leafIsAttached(leaf)) return;
+    // App also propagates to its own Sidecar. The pinned destination can be that same leaf;
+    // share its pending-open lease rather than racing an unguarded second native open.
+    for (const [hostLeaf, sidecarLeaf] of this.sidecarLeaves) {
+      if (sidecarLeaf === leaf) {
+        if (!this.leafDisplaysPage(leaf, page)) this.lastDocumentLeaf = leaf;
+        await this.syncSidecarToPage(hostLeaf, page);
+        return;
+      }
+    }
+    if (this.leafDisplaysPage(leaf, page)) return;
     this.lastDocumentLeaf = leaf;
     await leaf.openFile(page.file, { active: false });
   }
@@ -3187,6 +3265,8 @@ export default class KplexPlugin extends Plugin {
    * Open the selected page in the supplied native Sidecar leaf, preserving host navigation and
    * localized failure feedback. Passive callers supply an exact destination/request lifetime;
    * retired awaited opens cannot apply Markdown mode to a newer file or representation.
+   * Passive file changes skip an already-correct Markdown mode instead of scheduling another
+   * native state update; explicit representation requests still reapply their selected mode.
    * Explicit Open/move callers retain their existing unconditional representation behavior.
    */
   private async openPageInSidecarLeaf(leaf: WorkspaceLeaf, page: GraphPage, stillCurrent?: () => boolean): Promise<void> {
@@ -3216,14 +3296,15 @@ export default class KplexPlugin extends Plugin {
     }
     this.settings.sidecarLastFilePath = page.file.path;
     this.settings.sidecarLastUrl = "";
-    await leaf.openFile(page.file, { active: false });
+    if (!stillCurrent || !this.leafDisplaysPage(leaf, page)) await leaf.openFile(page.file, { active: false });
     if (stillCurrent && (!stillCurrent() || !this.leafDisplaysPage(leaf, page))) return;
     const state = leaf.getViewState();
-    if (state.type === "markdown") {
+    const mode = this.settings.sidecarMarkdownMode === "preview" ? "preview" : "source";
+    if (state.type === "markdown" && (!stillCurrent || state.state?.mode !== mode)) {
       await leaf.setViewState({
         ...state,
         active: false,
-        state: { ...state.state, mode: this.settings.sidecarMarkdownMode === "preview" ? "preview" : "source" },
+        state: { ...state.state, mode },
       });
     }
   }
@@ -3362,6 +3443,8 @@ export default class KplexPlugin extends Plugin {
    * toggle keeps its chosen representation, while another follower still receives genuine target
    * navigation. Captured leaf, file path/incarnation and request identity fence awaited mode and
    * settings work against navigation, rename, detachment, replacement and plugin unload.
+   * Native opens on one managed leaf are serialized: Obsidian can coalesce an overlapping
+   * newer open before it actually displays that target. Superseded queued requests never open.
    */
   async syncSidecarToPage(hostLeaf: WorkspaceLeaf, page: GraphPage): Promise<void> {
     if (this.unloading || !this.leafIsAttached(hostLeaf)) return;
@@ -3374,7 +3457,12 @@ export default class KplexPlugin extends Plugin {
     // must join that pending request rather than start a coalesced open with an early completion.
     if (previous?.leaf === leaf && (previous.pending || this.leafDisplaysPage(leaf, page)) && previous.file === file
       && previous.filePath === filePath && previous.url === page.url) return;
-    const request = { leaf, file, filePath, url: page.url, pending: true };
+    // Publish the completion lease before invoking native code, including synchronous host echoes.
+    let completeNative!: () => void;
+    const nativeCompletion = new Promise<void>(/** Resolve on success or failure so a rejected predecessor cannot poison newer navigation. */ resolve => { completeNative = resolve; });
+    const previousNativeFile = previous?.leaf === leaf && previous.pending ? previous.nativeFile : null;
+    const request = { leaf, file, filePath, url: page.url, pending: true, nativeCompletion,
+      nativeFile: previousNativeFile, previousNativeFile };
     this.passiveSidecarSyncRequests.set(hostLeaf, request);
     /** Only this exact live destination and canonical file incarnation may finish passive work. */
     const stillCurrent = (): boolean => !this.unloading
@@ -3384,14 +3472,24 @@ export default class KplexPlugin extends Plugin {
       && Boolean(this.adjacentPosition(hostLeaf, leaf))
       && (!file || (file.path === filePath && this.app.vault.getFileByPath(filePath ?? "") === file));
     try {
-      if (!stillCurrent() || this.leafDisplaysPage(leaf, page)) return;
+      if (previous?.leaf === leaf && previous.pending) await previous.nativeCompletion;
+      if (!stillCurrent()) return;
+      // A -> B -> A can return to the opening file after retiring A's original mode work.
+      // Finish that owned initial representation without reopening; unrelated same-file
+      // observations continue to preserve the user's representation.
+      if (this.leafDisplaysPage(leaf, page) && (!file || previousNativeFile !== file)) return;
+      request.nativeFile = file;
       await this.openPageInSidecarLeaf(leaf, page, stillCurrent);
+      // Only native open/mode work belongs to the queue. A slow settings write must not
+      // hold the next foreground target after the native destination has settled.
+      completeNative();
       if (!stillCurrent() || !this.leafDisplaysPage(leaf, page)) return;
       // Persist actual content identity so startup reconnects to the remembered adjacent tab.
       await this.saveSettings(false, false);
     } finally {
       // A failed or retired open must not permanently suppress a later navigation to this target.
       request.pending = false;
+      completeNative();
     }
   }
 

@@ -400,6 +400,36 @@ pointer events and desktop emulation do not prove physical Android/iOS touch,
 mobile lifecycle or actual paint latency; check sidebar reveal, central double
 taps versus pan/long-press, and the compact rails on a physical phone separately.
 
+## Style operation acceptance
+
+After exact-build staging, run `npm run verify:obsidian:style-operations` with the three explicit
+`kplex-test-small` vault variables and a fresh `KPLEX_HOST_REPORT_DIR`. Run native and browser lanes
+serially. The driver exercises the real node-style manager/editor with no graph view and an active
+on-demand graph, controlled storage and post-save refresh failures, repeated submissions, pending
+Cancel/Escape, native Settings subpages in their owning window, and durable plugin reload.
+
+Warm startup and drain retired demand before attributing work to styles. Native Markdown file-open
+reads remain in the report, separately identified by their actual caller; unknown/plugin reads stay
+strict. Settings subpages are siblings of the root tab container in the owning document. The driver
+uses the actual native modal backdrop for cleanup, rejects pre-existing style dialogs, and restores
+settings, layout, follow ownership, probes and configuration bytes. DOM activation is programmatic;
+physical touch and perceived latency remain separate. See the [style validation record](docs/validation/style-operations-2026-10-13.md).
+
+## Sidecar navigation acceptance
+
+After exact-build staging, run `npm run verify:obsidian:sidecar-latency` with the three explicit
+`kplex-test-small` vault variables and a fresh `KPLEX_HOST_REPORT_DIR`. Run native drivers serially
+with the selected window foreground. The driver warms a synthetic three-note sequence, asserts
+local readiness, and records 12 switches each with Sidecar closed, managed Sidecar open, and a
+same-size ordinary native pane. It checks one native open per managed switch, same-file/pan/zoom
+without native opens/body reads/rebuilds, and latest-target settlement after rapid navigation.
+
+Forwarding wrappers capture separate overlapping API/DOM boundaries, not actual paint; do not
+sum them as end-to-end latency. The driver restores fixtures, wrappers, workspace, settings and
+follow ownership, checks exact installed/build hashes and restores configuration bytes. Desktop
+or tablet emulation cannot establish physical HarmonyOS rendering/touch responsiveness. See the
+[Sidecar validation record](docs/validation/sidecar-latency-2026-10-12.md).
+
 ## Arrow direction acceptance
 
 After exact-build staging with `npm run verify:obsidian`, run

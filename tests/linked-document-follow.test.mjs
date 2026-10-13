@@ -130,11 +130,10 @@ test("off, unload, detached destinations and noncanonical targets reject passive
 test("a newer A-to-B request retires A's awaited mode and persistence work", /** Hold the original native completion while a newer exact target fully synchronizes. */ async () => {
   const state = fixture(), pause = deferred(); state.leaf.pause = pause.promise;
   const older = state.context.syncSidecarToPage(state.host, state.page);
-  await state.context.syncSidecarToPage(state.host, state.other);
-  const modes = state.modes.length, writes = state.context.writes;
-  pause.resolve(); await older;
-  assert.equal(state.leaf.file, state.other.file); assert.equal(state.modes.length, modes);
-  assert.equal(state.context.writes, writes); assert.equal(state.context.settings.sidecarLastFilePath, state.other.file.path);
+  const newer = state.context.syncSidecarToPage(state.host, state.other);
+  pause.resolve(); await Promise.all([older, newer]);
+  assert.equal(state.leaf.file, state.other.file); assert.equal(state.modes.length, 1);
+  assert.equal(state.context.writes, 1); assert.equal(state.context.settings.sidecarLastFilePath, state.other.file.path);
 });
 
 test("duplicate same-target observations preserve an in-flight companion's source/preview completion", /** Model a native file-open echo before the configured initial Markdown mode has completed. */ async () => {
@@ -184,6 +183,132 @@ test("a rejected native open releases pending ownership so the same target can r
   await state.context.syncSidecarToPage(state.host, state.page);
   assert.equal(state.opens.length, 1); assert.equal(state.leaf.state.state.mode, "preview");
   assert.equal(state.context.writes, 1);
+});
+
+test("App navigation shares one managed Sidecar open across both passive routes", /** Reproduce the production App dispatch overlap while native file publication is still pending. */ async () => {
+  const state = fixture(), app = appFollowFixture(), pause = deferred();
+  state.leaf.pause = pause.promise; state.leaf.publishAfterAwait = true;
+  const completions = [];
+  app.state.plugin.syncPageToDocumentLeaf = /** Retain the actual linked route's completion for assertion. */ page => {
+    const task = state.context.syncPageToDocumentLeaf(page); completions.push(task); return task;
+  };
+  app.state.plugin.syncSidecarToPage = /** Retain the actual managed route without replacing its request owner. */ (_host, page) => {
+    const task = state.context.syncSidecarToPage(state.host, page); completions.push(task); return task;
+  };
+  app.state.activate(state.page);
+  const count = state.opens.length;
+  pause.resolve(); await Promise.all(completions);
+  assert.equal(count, 1, "One center request must not open its pinned managed companion twice");
+  assert.equal(state.leaf.file, state.page.file); assert.equal(state.leaf.state.state.mode, "preview");
+  assert.equal(state.context.writes, 1);
+  assert.equal(state.context.lastDocumentLeaf, state.leaf, "Delegation preserves the linked destination's native recent-leaf bookkeeping");
+});
+
+test("linked routing cannot bypass a managed Sidecar's supersession fences", /** A newer completion must own representation and persistence even when the older request came from linked-tab sync. */ async () => {
+  const state = fixture(), pause = deferred(); state.leaf.pause = pause.promise;
+  const old = state.context.syncPageToDocumentLeaf(state.page);
+  const newer = state.context.syncSidecarToPage(state.host, state.other);
+  pause.resolve(); await Promise.all([old, newer]);
+  assert.equal(state.leaf.file, state.other.file);
+  assert.equal(state.modes.length, 1); assert.equal(state.context.writes, 1);
+});
+
+test("rapid Sidecar targets wait for the native open and skip superseded queued files", /** Obsidian may coalesce overlapping opens; only the last queued target may start after the current native operation. */ async () => {
+  const state = fixture(), pause = deferred(), latestFile = {path: "C.md"};
+  state.files.set(latestFile.path, latestFile); state.leaf.pause = pause.promise; state.leaf.publishAfterAwait = true;
+  const first = state.context.syncSidecarToPage(state.host, state.page);
+  const middle = state.context.syncSidecarToPage(state.host, state.other);
+  const latest = state.context.syncSidecarToPage(state.host, {path: "opaque:C", file: latestFile});
+  const before = state.opens.length;
+  pause.resolve(); await Promise.all([first, middle, latest]);
+  assert.equal(before, 1, "Native opens on one managed leaf must not overlap");
+  assert.deepEqual(state.opens.map(open => open.file), [state.page.file, latestFile]);
+  assert.equal(state.leaf.file, latestFile); assert.equal(state.modes.length, 1); assert.equal(state.context.writes, 1);
+});
+
+test("A-to-B-to-A finishes its original native mode without reopening A", /** Returning to the in-flight target must inherit initial representation work that its retired request can no longer apply. */ async () => {
+  const state = fixture(), pause = deferred(); state.leaf.pause = pause.promise;
+  const first = state.context.syncSidecarToPage(state.host, state.page);
+  const middle = state.context.syncSidecarToPage(state.host, state.other);
+  const latest = state.context.syncSidecarToPage(state.host, state.page);
+  pause.resolve(); await Promise.all([first, middle, latest]);
+  assert.equal(state.opens.length, 1); assert.equal(state.leaf.file, state.page.file);
+  assert.equal(state.leaf.state.state.mode, "preview"); assert.equal(state.modes.length, 1);
+  assert.equal(state.context.writes, 1);
+});
+
+test("the next Sidecar target does not wait for an earlier settings write", /** Serialize only native representation work; slow unrelated persistence cannot hold the foreground document queue. */ async () => {
+  const state = fixture(), disk = deferred();
+  state.context.saveSettings = /** Keep the first write pending independently of the completed native open. */ async () => {
+    state.context.writes++; if (state.context.writes === 1) await disk.promise;
+  };
+  const first = state.context.syncSidecarToPage(state.host, state.page);
+  for (let i = 0; i < 4; i++) await Promise.resolve();
+  assert.equal(state.context.writes, 1);
+  const next = state.context.syncSidecarToPage(state.host, state.other);
+  for (let i = 0; i < 4; i++) await Promise.resolve();
+  const opens = state.opens.length;
+  disk.resolve(); await Promise.all([first, next]);
+  assert.equal(opens, 2, "Completed native opening must release the queue before disk persistence");
+  assert.equal(state.leaf.file, state.other.file);
+});
+
+test("queued Sidecar work retires before opening on unload, detach, rename or explicit supersession", /** Recheck native ownership and canonical identity after the predecessor releases its queue slot. */ async () => {
+  for (const condition of ["unload", "detach", "rename", "explicit"]) {
+    const state = fixture(), pause = deferred(); state.leaf.pause = pause.promise;
+    const first = state.context.syncSidecarToPage(state.host, state.page);
+    const next = state.context.syncSidecarToPage(state.host, state.other);
+    if (condition === "unload") state.context.unloading = true;
+    if (condition === "detach") state.leaves.delete(state.leaf);
+    if (condition === "rename") state.other.file.path = "Renamed.md";
+    if (condition === "explicit") state.context.retirePassiveSidecarRequestsForLeaf(state.leaf);
+    pause.resolve(); await Promise.all([first, next]);
+    assert.equal(state.opens.length, 1, condition); assert.equal(state.modes.length, 0, condition);
+    assert.equal(state.context.writes, 0, condition);
+  }
+});
+
+test("a rejected native predecessor releases the newest queued Sidecar target", /** A real failure keeps its caller's rejection but cannot strand a later foreground navigation. */ async () => {
+  const state = fixture(), pause = deferred(), open = state.leaf.openFile;
+  state.leaf.openFile = /** Reject the first native operation after the newer target has queued. */ async function () {
+    this.openFile = open; await pause.promise; throw Error("Native predecessor failed");
+  };
+  const first = state.context.syncSidecarToPage(state.host, state.page);
+  const next = state.context.syncSidecarToPage(state.host, state.other);
+  // The queued target initially displays; move away before completion to require an actual retry.
+  state.leaf.file = state.page.file;
+  pause.resolve();
+  const results = await Promise.allSettled([first, next]);
+  assert.equal(results[0].status, "rejected"); assert.equal(results[1].status, "fulfilled");
+  assert.equal(state.leaf.file, state.other.file); assert.equal(state.opens.length, 1);
+  assert.equal(state.modes.length, 1); assert.equal(state.context.writes, 1);
+});
+
+test("a superseded Sidecar file-open echo cannot become a new center intent", /** Suppress only the exact known native operation; unrelated manual files and explicit retirement still remain eligible. */ async () => {
+  const state = fixture(), pause = deferred(), manual = {path: "Manual.md"}; state.files.set(manual.path, manual);
+  state.context.startupInitializing = false;
+  state.context.syncLeafToKplexEnabled = /** Follow remains enabled independently of the pending native operation. */ () => true;
+  state.leaf.pause = pause.promise;
+  const first = state.context.syncSidecarToPage(state.host, state.page);
+  const latest = state.context.syncSidecarToPage(state.host, state.other);
+  state.leaf.file = state.page.file; // The still-opening native operation publishes its older file.
+  const eligible = production("shouldFollowDocumentFile").call(state.context, state.page.file);
+  state.leaf.file = manual;
+  assert.equal(production("shouldFollowDocumentFile").call(state.context, manual), true);
+  state.leaf.file = state.page.file;
+  state.context.retirePassiveSidecarRequestsForLeaf(state.leaf);
+  assert.equal(production("shouldFollowDocumentFile").call(state.context, state.page.file), true);
+  pause.resolve(); await Promise.all([first, latest]);
+  assert.equal(eligible, false, "The older native echo must not retire the newest graph navigation");
+  assert.equal(state.modes.length, 0); assert.equal(state.context.writes, 0);
+});
+
+test("passive native opening skips an already correct Markdown mode while explicit opening reapplies it", /** Avoid redundant host state work after a genuine file change without weakening deliberate representation requests. */ async () => {
+  const state = fixture(); state.context.settings.sidecarMarkdownMode = "source";
+  await state.context.syncSidecarToPage(state.host, state.page);
+  assert.equal(state.opens.length, 1); assert.equal(state.modes.length, 0);
+  await state.context.openPageInSidecarLeaf(state.leaf, state.page);
+  assert.equal(state.opens.length, 2); assert.equal(state.modes.length, 1);
 });
 
 test("explicit native opens retire only their managed destination's passive completion", /** Keep other Sidecar owners live while testing every explicit same-file native open route. */ async () => {
@@ -309,6 +434,7 @@ function appFollowFixture() {
     setActivePath: /** A visible render reads only the latest native requested path. */ path => { state.renderPath = path; },
     setHistoryCursor: /** Cursor changes are retained by the tested App activation but are immaterial to its demand ownership. */ () => {}};
   const activate = production("activate",dependencies,"src/ui/App.tsx");
+  state.activate = activate;
   dependencies.activate = /** Observe the real activation arguments without replacing its demand handover or native synchronization logic. */ (page,...args) => {
     state.activates.push([page.path,...args]); activate(page,...args);
   };
