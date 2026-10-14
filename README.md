@@ -34,3 +34,7 @@ manifest.json 19d9ecce5557733e0ff0f2e27155e635c30158c3cfa6fbca0f11c16e4dedfd2c
 styles.css e8c9279e8904888aa71d5dd2b01f320d5b32fd10e15feb0b9a9576a34f11cea3
 
 MANIFEST.json records every payload byte length, SHA-256, and immutable Git blob reference when available. SHA256SUMS verifies payloads plus the manifest itself. The outer SHA256SUMS file verifies the ZIP. verify-archive.py validates the ZIP CRCs, complete entry inventory, every payload digest, and every provenance byte length. The verifier is also copied outside the archive. Old reports retain historical pending-acceptance wording; the final report records the maintainer's subsequent acceptance and supersedes it.
+
+## Fresh closeout verification
+
+`final-verification.zip` separately preserves the complete post-cleanup full/native/foreground logs, receipts, source/archive audit and controller. Verify both ZIPs against SHA256SUMS and run verify-archive.py on each. Native Windows workspace/configuration restoration passes; macOS, physical mobile and longer sessions remain acceptance gaps. No further runtime optimization or performance experiment was performed.
