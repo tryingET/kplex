@@ -1,1 +1,0 @@
-=> {"date":1791976610724,"nodeOrigin":1791950705618.299,"nodeNow":25904064.9254,"windowOrigin":1791976421645.2,"windowNow":189079.1000000015,"globalOrigin":1791976421645.2,"globalNow":189079.1000000015,"sameWindow":true,"supported":["dns","function","gc","http","http2","mark","measure","net","resource"],"debugger":false,"controller":false}
