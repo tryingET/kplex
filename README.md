@@ -38,3 +38,7 @@ MANIFEST.json records every payload byte length, SHA-256, and immutable Git blob
 ## Fresh closeout verification
 
 `final-verification.zip` separately preserves the complete post-cleanup full/native/foreground logs, receipts, source/archive audit and controller. Verify both ZIPs against SHA256SUMS and run verify-archive.py on each. Native Windows workspace/configuration restoration passes; macOS, physical mobile and longer sessions remain acceptance gaps. No further runtime optimization or performance experiment was performed.
+
+## Final CI and retained source history
+
+`ci-verification.zip` preserves the complete successful Linux workflow log and exact run/job/source identity. The final source is e1d8ca63c33b9830313b3d7c5465ef2a096a03c8. Keep `pr-153-performance-evidence`: the evidence history retains the benchmark baselines and final cleanup commit even if the implementation PR is squash-merged and its branch removed. The immutable earlier ZIPs remain unchanged.
