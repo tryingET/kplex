@@ -127,7 +127,7 @@ Inline semantic and visual values come from the established `inlineFields` map, 
 | Retained compatibility seam | Exact current use | Retirement owner |
 | --- | --- | --- |
 | `GraphBuilder` `getFileCache` / `mergeFileMetadata` | Full and patch metadata acquisition and semantic fingerprints; values feed collectors | C13c now delegates normalized semantic inputs; host acquisition stays C16 and C15 coordinates revisions |
-| Vault read/cachedRead, field cache, `MetadataParser`, IndexedDB `getBodies` | Existing byte/read-bounded full and patch body acquisition; C13a parser grammar/runtime now portable | C16 cache/storage orchestration; acquisition policy remains host-side |
+| Index body reads (`readMarkdownBodyForIndex`, data adapter), field cache, `MetadataParser`, IndexedDB `getBodies` | Existing byte/read-bounded full and patch body acquisition; C13a parser grammar/runtime now portable | C16 cache/storage orchestration; acquisition policy remains host-side |
 | `TFile`, live GraphPage file binding and host materialization | Existing compiler pages and legacy consumers; targets carry explicit facts | C13 portable output accepted; physical binding intentionally remains at the host adapter |
 | `Platform`, renderer timers/clock, time-budget checks | Parser runtime bridge plus legacy graph facade scheduling | C13a parser runtime and C13b resolver runtime injected; C15 owns remaining scheduler policy |
 | Plugin `getIndexSourceRevision()` and build lifetime callback | Family/file fences before and after awaits | C15 coordinator; C14 publication contract |

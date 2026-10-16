@@ -44,6 +44,7 @@ import { nodeId, type NodeId } from "../core/graph/model";
 import { entityFactForFile, ObsidianStructuralPatchSourceCollector, ObsidianStructuralSourceCollector } from "../adapters/obsidian/structuralSourceCollector";
 import { ObsidianHostLinkSourceCollector, readHostLinkSignatureEntries } from "../adapters/obsidian/hostLinkSourceCollector";
 import { ObsidianReferenceSourceCollector } from "../adapters/obsidian/ontologySourceCollector";
+import { readMarkdownBodyForIndex } from "../adapters/obsidian/markdownBodyRead";
 import {
   createObsidianMetadataSourceHost,
   normalizedBodyUrl,
@@ -1400,7 +1401,7 @@ export class GraphBuilder {
         const contents = await Promise.all(group.map(async (file) => ({
           file,
           revision: revisions.get(file)!,
-          content: Platform.isMobile ? await this.app.vault.read(file) : await this.app.vault.cachedRead(file),
+          content: await readMarkdownBodyForIndex(this.app.vault.adapter, file),
         })));
         if (!this.isCurrent()) return false;
         // One worker services parser requests serially. Awaiting each result avoids retaining cloned
@@ -1540,7 +1541,7 @@ export class GraphBuilder {
       }
 
       if (!body) {
-        const content = Platform.isMobile ? await this.app.vault.read(file) : await this.app.vault.cachedRead(file);
+        const content = await readMarkdownBodyForIndex(this.app.vault.adapter, file);
         if (!this.isCurrent() || !this.fileRevisionMatches(file, revision)) {
           return { ok: false, cancelled: true, rebuildRequired: false, touchedPagePaths, semanticChanges, semanticNoops };
         }

@@ -48,7 +48,7 @@ export const contributorBrowserInitialize = `(() => {
       metadataCache:{...events(),resolvedLinks:{},unresolvedLinks:{},getFileCache:file=>metadata.get(file.path)??null,
         getFirstLinkpathDest:literal=>files.get(literal)??files.get(literal+'.md')??null},
       dateFields:new Set(),daily:{folder:'Daily',format:'YYYY-MM-DD'}};
-    app.vault.read=app.vault.cachedRead;app.metadataTypeManager={getPropertyInfo:name=>({widget:app.dateFields.has(name)?'date':'text'})};
+    app.vault.read=app.vault.cachedRead;app.vault.adapter={read:path=>app.vault.cachedRead(app.vault.getFileByPath(path))};app.metadataTypeManager={getPropertyInfo:name=>({widget:app.dateFields.has(name)?'date':'text'})};
     app.internalPlugins={getPluginById:()=>({enabled:true,instance:{options:app.daily}})};
     window.moment=input=>({isValid:()=>true,format:()=>input});
     const cache=new M.KplexIndexedDbCache(vault);ok(await cache.open(),'Real IDB must open');

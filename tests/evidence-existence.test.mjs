@@ -29,7 +29,7 @@ function hostFixture() {
   const events = { on: () => ({}), offref() {} };
   const app = { saveLocalStorage() {}, vault: { ...events, getName: () => 'evidence-existence', getFileByPath: p => files.get(p) ?? null,
     getFiles: () => [...files.values()], getMarkdownFiles: () => [...files.values()], getRoot: () => root, getFolderByPath: p => p === '' ? root : null,
-    cachedRead: async () => '' }, metadataCache: { ...events, getFileCache: f => metadata.get(f.path) ?? null, resolvedLinks: {}, unresolvedLinks: {} } };
+    cachedRead: async () => '', /** Index body reads use the adapter; delegate so read guards still observe them. */ adapter: { read: path => app.vault.cachedRead(app.vault.getFileByPath(path)) } }, metadataCache: { ...events, getFileCache: f => metadata.get(f.path) ?? null, resolvedLinks: {}, unresolvedLinks: {} } };
   const settings = { indexingMode: 'on-demand', hierarchy: { hidden: [], parents: [], children: [], leftFriends: [], rightFriends: [], previous: [], next: [], exclusions: [] },
     inferAllLinksAsFriends: false, inverseInfer: false, showFullTagName: true, tagStyleList: [], baseNodeStyle: { maxLabelLength: 30 }, maxItemCount: 30,
     pinnedNodes: [], excludeFilepaths: [], nameFields: '', noteTypeField: 'Type', primaryTagField: 'Style' };

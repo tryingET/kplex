@@ -72,6 +72,7 @@ import { createObsidianMetadataSourceHost, normalizedBodyUrl, ObsidianMetadataSo
 import { entityFactForFile, entityFactForFolder, ObsidianStructuralPatchSourceCollector,
   structuralMarkdownSourceOrder, tagRef } from "./structuralSourceCollector";
 import { hostLinkRecord } from "./hostLinkSourceCollector";
+import { readMarkdownBodyForIndex } from "./markdownBodyRead";
 import { resolveObsidianReferenceTarget } from "./ontologySourceCollector";
 
 type FileObservation = { identity: string | null; observation?: SourceObservation; validatedHostRevision?: number; revision: number; dirty: boolean; bodyDirty: boolean; resolutionDirty: boolean; path: string; oldPath?: string; created: boolean; impact: Promise<void> | null };
@@ -1566,7 +1567,7 @@ export class ObsidianSourceAcquisition {
       if (queued) { this.counters.legacyBodies += 1; return queued; }
     }
     this.counters.vaultReads += 1;
-    const text = Platform.isMobile ? await this.app.vault.read(file) : await this.app.vault.cachedRead(file);
+    const text = await readMarkdownBodyForIndex(this.app.vault.adapter, file);
     if (!valid()) return null;
     this.counters.parses += 1;
     const body = await this.parse(text, background ? this.backgroundCheckpoint : undefined);

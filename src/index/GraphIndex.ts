@@ -157,6 +157,7 @@ import {
 
 import { tagDisplayName } from "../core/graph/presentation";
 import { captureSettingsPolicy, classifySettingsChange, compareIndexSettingsSignature } from "../core/graph/settingsPolicy";
+import { readMarkdownBodyForIndex } from "../adapters/obsidian/markdownBodyRead";
 import {
   ALL_PRESENTATION_FACETS, applyPreparedPresentation, capturePresentationSettings, prepareGraphPresentation,
   presentationFacetsForPage, withPreparedPresentation, type PreparedGraphPresentation, type PresentationStatus,
@@ -3661,7 +3662,7 @@ export class GraphIndex {
           const contents = await Promise.all(readGroup.map(async (file) => ({
             file,
             revision: revisions.get(file.path)!,
-            content: await this.app.vault.read(file),
+            content: await readMarkdownBodyForIndex(this.app.vault.adapter, file),
           })));
           if (!current()) return false;
           for (const { file, revision, content } of contents) {
@@ -4159,7 +4160,7 @@ export class GraphIndex {
   /** Count only actual Markdown reads belonging to independent URL discovery. */
   private async readUrlOwnerBody(file: TFile): Promise<string> {
     this.urlReadOwners++;
-    return this.app.vault.cachedRead(file);
+    return readMarkdownBodyForIndex(this.app.vault.adapter, file);
   }
 
   /** Read admission is already bounded; parser CPU uses the inventory or visible-source lane.

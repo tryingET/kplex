@@ -23,6 +23,8 @@ export function portableNoopFixture(bundle, degree) {
     metadataCache: { getFileCache: /** Borrow the latest controlled cache object. */ file => metadata.get(file.path), resolvedLinks: {}, unresolvedLinks: {},
       getFirstLinkpathDest: /** Every relationship target in this fixture is unresolved. */ () => null } };
   app.vault.read = app.vault.cachedRead;
+  // Index body reads go through the data adapter; delegate to this double's cachedRead so holds, counts and forbidden-read guards still see them.
+  app.vault.adapter = { read: path => app.vault.cachedRead(app.vault.getFileByPath(path)) };
   const host = { app, files, metadata, texts, reads, parses,
     cache: { /** This portable lane supplies hot data; durability is tested separately in real IDB. */ queueBodyWrite() {} },
     /** Register one native identity and text without simulating any semantic policy. */

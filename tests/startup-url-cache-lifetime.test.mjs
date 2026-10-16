@@ -24,7 +24,7 @@ function fixture(mode) {
   const events = { on: () => ({}), offref() {} };
   const app = { saveLocalStorage() {}, vault: { ...events, getName: () => 'url-lifetime', getFileByPath: path => files.find(f => f.path === path) ?? null,
     getMarkdownFiles: () => files, getFiles: () => files, getRoot: () => root, getFolderByPath: path => path === '' ? root : null,
-    cachedRead: async () => '' }, metadataCache: { ...events, getFileCache: () => metadata, resolvedLinks: {}, unresolvedLinks: {} } };
+    cachedRead: async () => '', /** Index body reads use the adapter; delegate so read guards still observe them. */ adapter: { read: path => app.vault.cachedRead(app.vault.getFileByPath(path)) } }, metadataCache: { ...events, getFileCache: () => metadata, resolvedLinks: {}, unresolvedLinks: {} } };
   const settings = { indexingMode: mode, hierarchy: { hidden: [], parents: [], children: [], leftFriends: [], rightFriends: [], previous: [], next: [], exclusions: [] },
     inferAllLinksAsFriends: false, inverseInfer: false, showFullTagName: true,
     tagStyleList: [], baseNodeStyle: { maxLabelLength: 30 }, maxItemCount: 30, pinnedNodes: [], excludeFilepaths: [], nameFields: '', noteTypeField: 'Type', primaryTagField: 'Style' };

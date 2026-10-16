@@ -49,6 +49,8 @@ export function replayFixture() {
     cachedRead: async file => { reads.push(file.path); return text.get(file.path) ?? ""; },
   };
   vault.read = vault.cachedRead;
+  // Index body reads go through the data adapter; delegate to this double's cachedRead so holds, counts and forbidden-read guards still see them.
+  vault.adapter = { read: path => vault.cachedRead(vault.getFileByPath(path)) };
   const app = { vault, metadataCache: { ...events(), resolvedLinks: {}, unresolvedLinks: {},
     getFileCache: file => metadata.get(file.path) ?? null,
     getFirstLinkpathDest: (literal, source) => files.get(resolutions.get(`${source}:${literal}`) ?? resolutions.get(literal) ?? literal) ?? null,

@@ -461,6 +461,7 @@ for (const file of [
   "src/adapters/obsidian/predicateContracts.ts",
   "src/adapters/obsidian/structuralSourceCollector.ts",
   "src/adapters/obsidian/hostLinkSourceCollector.ts",
+  "src/adapters/obsidian/markdownBodyRead.ts",
   "src/adapters/obsidian/ontologySourceCollector.ts",
   "src/adapters/obsidian/metadataSourceCollector.ts",
   "src/adapters/obsidian/relationshipMetadataWrite.ts",
@@ -1467,6 +1468,8 @@ const app = {
     getMarkdownFiles() { return [...files.values()]; },
     getFiles() { return [...files.values()]; },
     cachedRead(file) { return Promise.resolve(contents.get(file.path) ?? ""); },
+    // Index body reads go through the data adapter; delegate to this double's cachedRead so holds, counts and forbidden-read guards still see them.
+    adapter: { read(path) { return app.vault.cachedRead(app.vault.getFileByPath(path)); } },
     getFileByPath(path) { return files.get(path) ?? null; },
     getFolderByPath(path) { return folders.get(path) ?? null; },
     getAbstractFileByPath(path) { return files.get(path) ?? folders.get(path) ?? null; },
