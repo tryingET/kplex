@@ -28,6 +28,7 @@ for (const file of [
   "src/core/graph/model.ts",
   "src/core/graph/source.ts",
   "src/adapters/obsidian/hostLinkSourceCollector.ts",
+  "src/adapters/obsidian/excludedFiles.ts",
 ]) compile(file);
 
 const obsidianDir = join(temp, "node_modules/obsidian");

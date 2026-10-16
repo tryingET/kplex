@@ -5,6 +5,7 @@
  */
 import { getAllTags, TFile, TFolder, type MetadataCache, type Vault } from "obsidian";
 import { canonicalTagPaths } from "../../core/graph/tagPaths";
+import { isExcludedFile, isExcludedFolder } from "./excludedFiles";
 import { nodeId, type FileFacet, type GraphNodeKind } from "../../core/graph/model";
 import {
   MAX_NORMALIZED_SOURCE_RECORDS_PER_BATCH,
@@ -178,9 +179,10 @@ export function entityFactForFolder(folder: TFolder, revision = folderSourceRevi
 /**
  * Return the structural collector's document encounter coordinate without emitting facts. Inventory
  * reconciliation uses this only to preserve the established replay order in a source-local owner;
- * it does not create a dependency catalog and never reads Markdown or MetadataCache.
+ * it does not create a dependency catalog and never reads Markdown. Obsidian's excluded files and
+ * folders are skipped exactly as the structural scan skips them.
  */
-export function structuralMarkdownSourceOrder(vault: Pick<Vault, "getRoot">): ReadonlyMap<string, number> {
+export function structuralMarkdownSourceOrder(vault: Pick<Vault, "getRoot">, metadataCache: object): ReadonlyMap<string, number> {
   const root = vault.getRoot();
   if (!(root instanceof TFolder)) return new Map();
   const order = new Map<string, number>();
@@ -189,8 +191,8 @@ export function structuralMarkdownSourceOrder(vault: Pick<Vault, "getRoot">): Re
   while (stack.length) {
     const folder = stack.pop()!;
     for (const item of folder.children) {
-      if (item instanceof TFolder) stack.push(item);
-      else if (item instanceof TFile && item.extension === "md") order.set(item.path, next++);
+      if (item instanceof TFolder) { if (!isExcludedFolder(metadataCache, item.path)) stack.push(item); }
+      else if (item instanceof TFile && item.extension === "md" && !isExcludedFile(metadataCache, item.path)) order.set(item.path, next++);
     }
   }
   return order;
@@ -404,6 +406,9 @@ export class ObsidianStructuralSourceCollector {
       if (!this.isCurrent()) return null;
       const { folder, revision } = stack.pop()!;
       for (const item of folder.children) {
+        // Obsidian's excluded files and folders (with everything below them) are not part of the Plex.
+        if (item instanceof TFolder && isExcludedFolder(this.host.metadataCache, item.path)) continue;
+        if (item instanceof TFile && isExcludedFile(this.host.metadataCache, item.path)) continue;
         if (item instanceof TFolder) {
           if (!(await touch("folder", folder.path, item.path, item.name))) return null;
           // Emit the relationship before the materialized target fact on purpose. C11 permits
@@ -423,6 +428,7 @@ export class ObsidianStructuralSourceCollector {
 
     for (const file of this.host.vault.getMarkdownFiles()) {
       if (!this.isCurrent()) return null;
+      if (isExcludedFile(this.host.metadataCache, file.path)) continue;
       const cache = this.host.metadataCache.getFileCache(file);
       const rawTags = cache ? (getAllTags(cache) ?? []) : [];
       const contributionRevision = emit ? tagContributionRevision(file, rawTags) : null;

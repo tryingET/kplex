@@ -36,6 +36,7 @@ for (const file of [
   "src/adapters/obsidian/yieldToHostTask.ts",
   "src/adapters/obsidian/urlIdentity.ts",
   "src/adapters/obsidian/metadataSourceCollector.ts",
+  "src/adapters/obsidian/excludedFiles.ts",
 ]) compile(file);
 
 const obsidianDir = join(temp, "node_modules/obsidian");

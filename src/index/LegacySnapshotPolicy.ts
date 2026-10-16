@@ -8,6 +8,7 @@
  */
 import {ontologyConfiguration} from "../core/contracts/ontologyConfiguration";
 import { yieldToHostTask } from "../adapters/obsidian/yieldToHostTask";
+import { indexedMarkdownFiles } from "../adapters/obsidian/excludedFiles";
 import { normalizePath, type App, type TFile } from "obsidian";
 import type { KplexSettings } from "../settings";
 import { HIERARCHY_ROLES } from "../core/graph/settingsPolicy";
@@ -34,7 +35,7 @@ export async function planRetiredExclusionReconciliation(
   const fields = new Set(HIERARCHY_ROLES.flatMap((role) => [...ontologyConfiguration(settings).hierarchy[role]]).map(normalizeFieldName));
   const host = createObsidianMetadataSourceHost(app);
   const affected = new Set<string>();
-  const files = app.vault.getMarkdownFiles();
+  const files = indexedMarkdownFiles(app);
   const captured: Array<{ file: TFile; path: string; mtime: number; size: number }> = [];
   for (let offset = 0; offset < files.length; offset += 64) {
     if (!current()) return null;

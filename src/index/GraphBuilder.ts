@@ -44,6 +44,7 @@ import { nodeId, type NodeId } from "../core/graph/model";
 import { entityFactForFile, ObsidianStructuralPatchSourceCollector, ObsidianStructuralSourceCollector } from "../adapters/obsidian/structuralSourceCollector";
 import { ObsidianHostLinkSourceCollector, readHostLinkSignatureEntries } from "../adapters/obsidian/hostLinkSourceCollector";
 import { ObsidianReferenceSourceCollector } from "../adapters/obsidian/ontologySourceCollector";
+import { indexedMarkdownFiles } from "../adapters/obsidian/excludedFiles";
 import {
   createObsidianMetadataSourceHost,
   normalizedBodyUrl,
@@ -915,7 +916,7 @@ export class GraphBuilder {
     const compiler = new NormalizedGraphCompiler(this.fullCompilerSettings(), runtime, "nodes");
     const structuralRead = await this.collectStructuralSources(compiler);
     if (!structuralRead || !current() || !(await this.collectHostLinkSources(compiler))) return null;
-    for (const file of this.app.vault.getMarkdownFiles()) {
+    for (const file of indexedMarkdownFiles(this.app)) {
       if (!current() || !(await acquisition.replayNodeMetadata(file.path,
         this.metadataSourceSettings, compiler, runtime)) || !current()) return null;
       onProgress?.();
@@ -1315,7 +1316,7 @@ export class GraphBuilder {
 
   /** Acquire bounded body batches, stream neutral facts and hash cooperatively under source/file fences. */
   private async collectMarkdownSources(compiler: NormalizedGraphCompiler, acquireSources: boolean): Promise<boolean> {
-    const files = this.app.vault.getMarkdownFiles();
+    const files = indexedMarkdownFiles(this.app);
     const alive = new Set(files.map((file) => file.path));
     for (const cachedPath of this.fieldCache.keys()) {
       if (alive.has(cachedPath)) continue;

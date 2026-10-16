@@ -6,6 +6,7 @@
  */
 import { TFile, type App } from "obsidian";
 import { canonicalWebUrl, webUrlOrigin } from "./urlIdentity";
+import { isExcludedFile } from "./excludedFiles";
 import { nodeId, type GraphNodeKind } from "../../core/graph/model";
 import {
   MAX_NORMALIZED_SOURCE_RECORDS_PER_BATCH,
@@ -50,6 +51,8 @@ export type DailyNotesSourceSettings = Readonly<{
 export type ObsidianMetadataSourceHost = Readonly<{
   getFileByPath(path: string): TFile | null;
   resolveLinkpath(linkpath: string, sourcePath: string): TFile | null;
+  /** Whether a path is on Obsidian's excluded-files list; hosts without the filter exclude nothing. */
+  isExcludedFile?(path: string): boolean;
   resolvedLinkCount(sourcePath: string, targetPath: string): number;
   isDateProperty(fieldName: string): boolean;
   dailyNotesSettings(): DailyNotesSourceSettings | null;
@@ -100,6 +103,7 @@ export function createObsidianMetadataSourceHost(app: App): ObsidianMetadataSour
   return {
     getFileByPath: (path) => app.vault.getFileByPath(path),
     resolveLinkpath: (linkpath, sourcePath) => app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath),
+    isExcludedFile: (path) => isExcludedFile(app.metadataCache, path),
     resolvedLinkCount: (sourcePath, targetPath) => app.metadataCache.resolvedLinks[sourcePath]?.[targetPath] ?? 0,
     isDateProperty: (fieldName) => {
       const manager = (app as AppWithMetadataTypes).metadataTypeManager;
@@ -442,6 +446,11 @@ export class ObsidianMetadataSourceCollector {
           const relative = normalizePath([daily.folder, rendered].filter(Boolean).join("/"));
           const targetPath = relative.toLowerCase().endsWith(".md") ? relative : `${relative}.md`;
           const materialized = this.host.getFileByPath(targetPath);
+          // A daily note on Obsidian's excluded-files list is no relation (and no placeholder).
+          if (materialized instanceof TFile && this.host.isExcludedFile?.(materialized.path)) {
+            if (!(await touch())) return false;
+            continue;
+          }
           const entity = materialized instanceof TFile ? fileRef(materialized) : unresolvedRef(targetPath);
           const record: DatePropertyOccurrence = {
             kind: "date-property",

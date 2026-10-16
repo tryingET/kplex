@@ -72,6 +72,7 @@ import { createObsidianMetadataSourceHost, normalizedBodyUrl, ObsidianMetadataSo
 import { entityFactForFile, entityFactForFolder, ObsidianStructuralPatchSourceCollector,
   structuralMarkdownSourceOrder, tagRef } from "./structuralSourceCollector";
 import { hostLinkRecord } from "./hostLinkSourceCollector";
+import { indexedMarkdownFiles, isExcludedFile } from "./excludedFiles";
 import { resolveObsidianReferenceTarget } from "./ontologySourceCollector";
 
 type FileObservation = { identity: string | null; observation?: SourceObservation; validatedHostRevision?: number; revision: number; dirty: boolean; bodyDirty: boolean; resolutionDirty: boolean; path: string; oldPath?: string; created: boolean; impact: Promise<void> | null };
@@ -1615,6 +1616,8 @@ export class ObsidianSourceAcquisition {
       for (const [state, links] of [["resolved", this.app.metadataCache.resolvedLinks], ["unresolved", this.app.metadataCache.unresolvedLinks]] as const) {
         for (const [target, count] of Object.entries(links[file.path] ?? {})) {
           if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) throw new SourceFactError("invalid-frame", "resolution");
+          // Resolved links to Obsidian's excluded files are not part of the Plex.
+          if (state === "resolved" && isExcludedFile(this.app.metadataCache, target)) continue;
           if (!(await emit({ kind: "host-link", state, target, count }))) return false;
         }
       }
@@ -1934,8 +1937,8 @@ export class ObsidianSourceAcquisition {
         const movedPaths = new Set<string>();
         this.startupDiagnostics?.recordWork("sourceInventoryPasses");
         this.startupDiagnostics?.phase("source", "source-inventory");
-        const markdown = this.app.vault.getMarkdownFiles();
-        const structuralOrder = structuralMarkdownSourceOrder(this.app.vault);
+        const markdown = indexedMarkdownFiles(this.app);
+        const structuralOrder = structuralMarkdownSourceOrder(this.app.vault, this.app.metadataCache);
         if (structuralOrder.size !== markdown.length) return false;
         this.sourceCoordinates.clear();
         this.pendingUrlAliasSources.clear(); this.urlAliasInventoryComplete = false;

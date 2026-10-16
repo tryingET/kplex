@@ -157,6 +157,7 @@ import {
 
 import { tagDisplayName } from "../core/graph/presentation";
 import { captureSettingsPolicy, classifySettingsChange, compareIndexSettingsSignature } from "../core/graph/settingsPolicy";
+import { indexedMarkdownFiles, isExcludedFile, isExcludedFolder } from "../adapters/obsidian/excludedFiles";
 import {
   ALL_PRESENTATION_FACETS, applyPreparedPresentation, capturePresentationSettings, prepareGraphPresentation,
   presentationFacetsForPage, withPreparedPresentation, type PreparedGraphPresentation, type PresentationStatus,
@@ -1341,9 +1342,10 @@ export class GraphIndex {
   async primePhysicalSearchCatalog(): Promise<void> {
     const inventory = this.app.vault.getAllLoadedFiles?.() ?? this.app.vault.getFiles();
     const files = new Map<string, TFile>(), folders: TFolder[] = [];
+    // Obsidian's excluded files and folders are not part of the Plex and get no search entry.
     for (const entry of inventory) {
-      if (entry instanceof TFile) files.set(entry.path, entry);
-      else if (entry instanceof TFolder) folders.push(entry);
+      if (entry instanceof TFile) { if (!isExcludedFile(this.app.metadataCache, entry.path)) files.set(entry.path, entry); }
+      else if (entry instanceof TFolder && !isExcludedFolder(this.app.metadataCache, entry.path)) folders.push(entry);
     }
     const prepared = await this.preparePhysicalSearchCatalog(files, () => !this.diagnosticsClosed,
       INDEX_WORK_PRIORITY.visibleNeighborhood, undefined, folders, true);
@@ -3584,7 +3586,7 @@ export class GraphIndex {
     try {
       const run = ++this.bodyWarmGeneration;
       const current = () => !this.diagnosticsClosed && !this.persistentCachePurged && run === this.bodyWarmGeneration && isCurrent();
-      const files = this.app.vault.getMarkdownFiles();
+      const files = indexedMarkdownFiles(this.app);
       if (!files.length) return true;
 
       const storeReady = await this.indexedDb.bodyStoreReady();
@@ -3760,8 +3762,9 @@ export class GraphIndex {
       for (const record of records) {
         if (!current()) return;
         const file = this.app.vault.getFileByPath(record.path);
+        // Owners persisted before a note was added to Obsidian's excluded files are dropped too.
         if (!file || file.extension !== "md" || file.stat.mtime !== record.mtime || file.stat.size !== record.size
-          || (this.urlOwnerEvents.get(record.path) ?? 0) !== 0) {
+          || (this.urlOwnerEvents.get(record.path) ?? 0) !== 0 || isExcludedFile(this.app.metadataCache, record.path)) {
           void this.indexedDb.deleteUrlOwner(record.path); continue;
         }
         await this.publishUrlOwner(file, { urls: record.urls, inlineFieldOccurrences: record.inlineFieldOccurrences, inlineFields: {} }, 0, record.frontmatter, true, lifetime);
@@ -4080,7 +4083,7 @@ export class GraphIndex {
     const task = this.workScheduler.run(INDEX_WORK_PRIORITY.urlInventory, async () => {
       await this.restoreUrlIndex();
       if (this.diagnosticsClosed || this.persistentCachePurged) return false;
-      const files = this.app.vault.getMarkdownFiles();
+      const files = indexedMarkdownFiles(this.app);
       this.urlDiscoveryTotal = files.length;
       this.plugin.startupDiagnostics?.mark("url-background-start");
       const concurrency = Platform.isIosApp ? 1 : Platform.isMobile ? 2 : 6;
@@ -4115,7 +4118,7 @@ export class GraphIndex {
       }
       if (this.diagnosticsClosed || this.persistentCachePurged) return false;
       while (this.urlOwnerTasks.size && !this.diagnosticsClosed) await Promise.all([...this.urlOwnerTasks.values()]);
-      const currentFiles = this.app.vault.getMarkdownFiles();
+      const currentFiles = indexedMarkdownFiles(this.app);
       this.urlDiscoveryComplete = this.urlOwnerFailures.size === 0 && currentFiles.every(/** Closed URL discovery requires exact current owners, including zero-link notes. */
         file => { const owner = this.urlOwners.get(file.path); return owner?.file === file && owner.mtime === file.stat.mtime
           && owner.size === file.stat.size && owner.event === (this.urlOwnerEvents.get(file.path) ?? 0); });
@@ -4249,7 +4252,7 @@ export class GraphIndex {
     }).finally(() => {
       if (this.urlOwnerTasks.get(path) === task) this.urlOwnerTasks.delete(path);
       if (!this.urlDiscoveryRunning && !this.urlOwnerTasks.size && this.urlOwnerFailures.size === 0) {
-        this.urlDiscoveryComplete = this.app.vault.getMarkdownFiles().every(/** Current native membership independently proves URL closure after an edit. */
+        this.urlDiscoveryComplete = indexedMarkdownFiles(this.app).every(/** Current native membership independently proves URL closure after an edit. */
           file => { const owner = this.urlOwners.get(file.path); return owner?.file === file && owner.mtime === file.stat.mtime
             && owner.size === file.stat.size && owner.event === (this.urlOwnerEvents.get(file.path) ?? 0); });
         if (!background || this.foregroundUrlOwners.has(path)) this.flushUrlPublication(true);
@@ -4284,7 +4287,7 @@ export class GraphIndex {
       this.urlPendingPublications--;
       if (!this.diagnosticsClosed && !this.persistentCachePurged && !this.urlDiscoveryRunning
         && !this.urlOwnerTasks.size && !this.urlPendingPublications && this.urlOwnerFailures.size === 0) {
-        this.urlDiscoveryComplete = this.app.vault.getMarkdownFiles().every(/** Deleted membership closes only when every surviving owner is current. */
+        this.urlDiscoveryComplete = indexedMarkdownFiles(this.app).every(/** Deleted membership closes only when every surviving owner is current. */
           file => { const owner = this.urlOwners.get(file.path); return owner?.file === file && owner.mtime === file.stat.mtime
             && owner.size === file.stat.size && owner.event === (this.urlOwnerEvents.get(file.path) ?? 0); });
       }
@@ -6160,7 +6163,7 @@ export class GraphIndex {
         this.restoredRemovedMarkdownPaths = [];
       }
 
-      const markdownFiles = this.app.vault.getMarkdownFiles();
+      const markdownFiles = indexedMarkdownFiles(this.app);
       const markdownByPath = new Map(markdownFiles.map((file) => [file.path, file] as const));
       const indexedPaths = new Set<string>(resuming ? this.resumableCheckpointPaths ?? [] : []);
       let centerPath: string | null = null;

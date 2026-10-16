@@ -99,6 +99,7 @@ import { PartialRelatedFileError } from "./adapters/obsidian/relatedFileOutcome"
 import { capturePlaceholderRelocation, applyPlaceholderRelocation, assertPlaceholderRelocationTarget, placeholderReference, type PlaceholderRelocation } from "./adapters/obsidian/placeholderRelocation";
 import { ActionManager, type ActionContext, type ActionImplementations, type SidecarFoldRoute, type SidecarFoldTarget } from "./application/ActionManager";
 import { frontmatterDeclarationKey } from "./application/frontmatterUnlink";
+import { indexedMarkdownFiles, isExcludedFile, isExcludedFolder } from "./adapters/obsidian/excludedFiles";
 import { ACTION_BY_ID, ACTION_RELATION_ROLES, type ActionId, type ActionOutcome, type ActionRequest, type Availability } from "./core/plex/actions";
 import { compileActionBindings, migrateActionPreferences, sanitizeActionPreferences, type ActionPreferencesV1 } from "./core/plex/actionPreferences";
 import { createActionCommandPublisher, type ActionCommandPublisher } from "./adapters/obsidian/actionCommands";
@@ -539,7 +540,7 @@ export default class KplexPlugin extends Plugin {
         // scan is deferred until K-Plex is actually opened: repeatedly rebuilding 20k notes in a
         // hidden WebView was responsible for a restart loop on iPad. The per-file IndexedDB body
         // checkpoints still let an interrupted first scan resume instead of starting at file zero.
-        const noteCount = this.app.vault.getMarkdownFiles().length;
+        const noteCount = indexedMarkdownFiles(this.app).length;
         const largeIosExpensiveRebuild = !this.index.isOnDemandMode() && Platform.isIosApp && !restored.fresh && !this.index.hasPendingSnapshotHydration() &&
           (!restored.restored || !this.index.hasIncrementalRestorePatch()) && noteCount > 5000;
         if (!largeIosExpensiveRebuild) void this.finishStartupIndexPreparation();
@@ -566,7 +567,8 @@ export default class KplexPlugin extends Plugin {
     // for the complete snapshot before discovering a usable fallback.
     paths.push(...this.settings.navigationHistory.slice(-12).reverse());
     paths.push(...this.settings.pinnedNodes);
-    return [...new Set(paths.filter(Boolean))];
+    // Obsidian's excluded files are not part of the Plex and never seed a center.
+    return [...new Set(paths.filter((path) => path && !this.isExcludedVaultPath(path, false)))];
   }
 
   /** Keep the requested center through partial startup; only completed indexing proves its absence.
@@ -729,7 +731,9 @@ export default class KplexPlugin extends Plugin {
       this.preRestoreReasons.set(reason, this.indexDirtyRevision);
       if (file?.extension === "md") this.preRestoreMarkdownPaths.set(file.path, this.indexDirtyRevision);
     };
+    // Obsidian's excluded files stay outside the Plex while the fence records changes, too.
     const created = this.app.vault.on("create", (item) => {
+      if (this.isExcludedVaultPath(item.path, item instanceof TFolder)) return;
       this.index.invalidateHostStructure();
       mark(item instanceof TFile && item.extension === "md" ? "vault:create-markdown" : "vault:create",
         item instanceof TFile ? item : undefined);
@@ -737,25 +741,37 @@ export default class KplexPlugin extends Plugin {
       else if (item instanceof TFolder) void this.index.updateHostFolderAvailability(item.path, item);
     });
     const deleted = this.app.vault.on("delete", (item) => {
+      if (this.isExcludedVaultPath(item.path, item instanceof TFolder)) return;
       this.index.invalidateHostStructure();
       mark("vault:delete", item instanceof TFile ? item : undefined);
       if (item instanceof TFile) this.index.updateHostFileAvailability(item.path);
       else if (item instanceof TFolder) void this.index.updateHostFolderAvailability(item.path);
     });
     const renamed = this.app.vault.on("rename", (item, oldPath) => {
+      const folder = item instanceof TFolder;
+      const wasExcluded = this.isExcludedVaultPath(oldPath, folder), isExcluded = this.isExcludedVaultPath(item.path, folder);
+      if (wasExcluded && isExcluded) return;
       this.index.invalidateHostStructure();
       mark("vault:rename", item instanceof TFile ? item : undefined);
-      if (item instanceof TFile) this.index.updateHostFileAvailability(oldPath, item);
-      else if (item instanceof TFolder) void this.index.updateHostFolderAvailability(oldPath, item);
+      // Across the excluded-files boundary a rename is a removal (into) or a creation (out of) for the catalog.
+      if (item instanceof TFile) {
+        if (isExcluded) this.index.updateHostFileAvailability(oldPath);
+        else if (wasExcluded) this.index.updateHostFileAvailability(item.path, item);
+        else this.index.updateHostFileAvailability(oldPath, item);
+      } else if (item instanceof TFolder) {
+        if (isExcluded) void this.index.updateHostFolderAvailability(oldPath);
+        else if (wasExcluded) void this.index.updateHostFolderAvailability(item.path, item);
+        else void this.index.updateHostFolderAvailability(oldPath, item);
+      }
     });
     const resolved = this.app.metadataCache.on("resolve", (file) => {
-      if (this.app.vault.getFileByPath(file.path) === file) {
+      if (this.app.vault.getFileByPath(file.path) === file && !this.isExcludedVaultPath(file.path, false)) {
         this.index.refreshVisibleHostMetadataPreviews(file.path);
         void this.index.refreshVisiblePresentation(file.path);
       }
     });
     const metadata = this.app.metadataCache.on("changed", (file) => {
-      if (this.app.vault.getFileByPath(file.path) !== file) return;
+      if (this.app.vault.getFileByPath(file.path) !== file || this.isExcludedVaultPath(file.path, false)) return;
       const previousSourceRevision = this.indexDirtyRevision;
       mark("metadata:changed", file);
       void this.index.refreshVisiblePresentation(file.path);
@@ -842,6 +858,17 @@ export default class KplexPlugin extends Plugin {
     return changed;
   }
 
+  /**
+   * Whether a vault path is on Obsidian's excluded-files list and therefore outside the Plex.
+   *
+   * @param path - vault-relative path of the file or folder
+   * @param folder - test the path as a folder (prefix) rather than a file
+   * @returns true when Obsidian excludes the path
+   */
+  private isExcludedVaultPath(path: string, folder: boolean): boolean {
+    return folder ? isExcludedFolder(this.app.metadataCache, path) : isExcludedFile(this.app.metadataCache, path);
+  }
+
   private registerReactiveIndexListeners(): void {
     if (this.reactiveIndexListenersRegistered) return;
     this.reactiveIndexListenersRegistered = true;
@@ -850,6 +877,7 @@ export default class KplexPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("create",
       /** Publish native file availability independently of startup/build completion, then queue its source patch. */
       (created) => {
+        if (this.isExcludedVaultPath(created.path, created instanceof TFolder)) return;
         this.index.invalidateHostStructure(Boolean((created instanceof TFile || created instanceof TFolder)
           && this.initialIndexComplete && this.index.hasPhysicalBaseline()));
         this.pruneManagedMetadataWrites();
@@ -894,6 +922,7 @@ export default class KplexPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("delete",
       /** Remove deleted Markdown sources from both semantic progress and its cached denominator. */
       (deleted) => {
+        if (this.isExcludedVaultPath(deleted.path, deleted instanceof TFolder)) return;
         this.index.invalidateHostStructure();
         if (deleted instanceof TFile && deleted.extension === "md") {
           this.countDeletedMarkdownFile(deleted);
@@ -931,6 +960,18 @@ export default class KplexPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("rename",
       /** Preserve path-owned state and refresh totals when a rename changes Markdown membership. */
       (renamed, oldPath) => {
+        const folder = renamed instanceof TFolder;
+        const wasExcluded = this.isExcludedVaultPath(oldPath, folder), isExcluded = this.isExcludedVaultPath(renamed.path, folder);
+        if (wasExcluded && isExcluded) return;
+        if (wasExcluded !== isExcluded) {
+          // Moving into or out of Obsidian's excluded files adds or removes whole Plex endpoints.
+          // This is rare; one structural refresh replaces the old path's state consistently.
+          this.index.invalidateHostStructure();
+          this.cachedMarkdownFileCount = null;
+          this.dirtyMarkdownPaths.delete(oldPath);
+          this.scheduleRebuild("vault:excluded-boundary");
+          return;
+        }
         this.index.invalidateHostStructure();
         if (!(renamed instanceof TFile)) {
           if (renamed instanceof TFolder && this.initialIndexComplete && this.index?.hasPhysicalBaseline()) {
@@ -963,12 +1004,13 @@ export default class KplexPlugin extends Plugin {
         });
       }));
     this.registerEvent(this.app.metadataCache.on("resolve", (file) => {
-      if (this.app.vault.getFileByPath(file.path) === file) {
+      if (this.app.vault.getFileByPath(file.path) === file && !this.isExcludedVaultPath(file.path, false)) {
         this.index.refreshVisibleHostMetadataPreviews(file.path);
         void this.index.refreshVisiblePresentation(file.path);
       }
     }));
     this.registerEvent(this.app.metadataCache.on("changed", (file) => {
+      if (this.isExcludedVaultPath(file.path, false)) return;
       const previousSourceRevision = this.indexDirtyRevision;
       /** Capture preview freshness after this event's source revision has been advanced. */
       const refreshVisible = (): void => {
@@ -1464,7 +1506,7 @@ export default class KplexPlugin extends Plugin {
         ? await this.index.rebuildProgressively(this.startupGraphSeedPaths(), {
           // Keep the large-iOS low-memory checkpoint strategy, but only after the useful center
           // neighborhood has been published so first paint is no longer blocked by vault prewarm.
-          prewarmBodyCache: Platform.isIosApp && this.app.vault.getMarkdownFiles().length > 5000,
+          prewarmBodyCache: Platform.isIosApp && indexedMarkdownFiles(this.app).length > 5000,
         })
         : await this.index.rebuild();
       if (this.unloading) return;
@@ -3348,6 +3390,8 @@ export default class KplexPlugin extends Plugin {
 
   /** Follow an eligible native file, excluding a known superseded passive Sidecar echo; explicit opens retire that lease. */
   shouldFollowDocumentFile(file: TFile, hostLeaf: WorkspaceLeaf, sourceLeaf?: WorkspaceLeaf): boolean {
+    // Obsidian's excluded files are not part of the Plex, so K-Plex does not center on them.
+    if (this.isExcludedVaultPath(file.path, false)) return false;
     const session = this.documentSession(hostLeaf);
     if (!session || this.startupInitializing || !this.syncLeafToKplexEnabled(hostLeaf)) return false;
     const suppression = session.suppression;
@@ -3664,7 +3708,7 @@ export default class KplexPlugin extends Plugin {
     // Progressive publication can notify frequently in large vaults. Cache the vault-wide total
     // between lifecycle changes so status rendering remains O(1) instead of repeatedly allocating
     // the complete Markdown-file list for every published batch.
-    const totalFiles = this.cachedMarkdownFileCount ??= this.app.vault.getMarkdownFiles().length;
+    const totalFiles = this.cachedMarkdownFileCount ??= indexedMarkdownFiles(this.app).length;
     const facts = this.computeIndexStatusFacts(totalFiles);
     const { phase, indexedFiles } = facts;
     const failure = phase === "incomplete" ? this.index.getSemanticPreparationFailure?.() : null;

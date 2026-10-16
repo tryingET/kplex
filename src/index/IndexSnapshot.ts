@@ -5,6 +5,7 @@
  */
 import { TFile, TFolder, type App } from "obsidian";
 import { encodeIndexSettingsSignature } from "../core/graph/settingsPolicy";
+import { isExcludedFile, isExcludedFolder } from "../adapters/obsidian/excludedFiles";
 import { RESOLVED_DIRECTION_POLICY_VERSION } from "../core/graph/relations";
 import type { KplexSettings } from "../settings";
 import { LinkDirection, RelationType, type GraphPage, type Relation } from "../types";
@@ -108,7 +109,9 @@ export type VaultInventory = {
 };
 
 /** Cheap deterministic marker that includes attachments and empty folders. The tree walk is
- * O(vault entries), performs no file reads, and is shared with the restore inventory pass. */
+ * O(vault entries), performs no file reads, and is shared with the restore inventory pass.
+ * Obsidian's excluded files and folders are skipped exactly as the structural scan skips them, so
+ * the restored graph and the inventory agree and editing the excluded list changes the signature. */
 function scanVault(app: App, retainInventory: boolean): VaultInventory {
   let hash = 2166136261 >>> 0;
   let count = 0;
@@ -126,10 +129,10 @@ function scanVault(app: App, retainInventory: boolean): VaultInventory {
     const children = [...folder.children].sort((a, b) => a.path.localeCompare(b.path));
     for (const child of children) {
       if (child instanceof TFolder) {
-        stack.push(child);
+        if (!isExcludedFolder(app.metadataCache, child.path)) stack.push(child);
         continue;
       }
-      if (!(child instanceof TFile)) continue;
+      if (!(child instanceof TFile) || isExcludedFile(app.metadataCache, child.path)) continue;
       if (retainInventory) filesByPath.set(child.path, child);
       hash = hashText(hash, `F\0${child.path}\0${child.stat.mtime}\0${child.stat.size}\0`);
       count += 1;

@@ -34,6 +34,7 @@ for (const file of [
   "src/core/graph/source.ts",
   "src/core/graph/tagPaths.ts",
   "src/adapters/obsidian/structuralSourceCollector.ts",
+  "src/adapters/obsidian/excludedFiles.ts",
 ]) compile(file);
 
 const obsidianDir = join(temp, "node_modules/obsidian");

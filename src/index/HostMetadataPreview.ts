@@ -32,6 +32,7 @@ import { createGraphState, type GraphState } from "./GraphState";
 import { extractLinksFromValue, iterateFrontmatterAliasSteps, mergeFileMetadata, normalizeFieldName, type ParsedBodyMetadata } from "./fieldParser";
 import { cachedCenterTargetVisibility, captureCachedCenterGateSettings, projectCachedCenterGates,
   type CachedCenterGates } from "./CachedCenterGateProjection";
+import { isExcludedFile } from "../adapters/obsidian/excludedFiles";
 
 const MAX_PREVIEW_SOURCES = 64;
 const MAX_PREVIEW_TARGETS = 256;
@@ -516,7 +517,8 @@ export class HostMetadataPreview {
     }
     for (const path of sources) {
       const file = this.app.vault.getFileByPath(path);
-      if (!(file instanceof TFile)) continue;
+      // Obsidian's excluded files contribute no preview entity or links, as in the full index.
+      if (!(file instanceof TFile) || isExcludedFile(this.app.metadataCache, file.path)) continue;
       capture(file);
       if (!(await compiler.seedEntityFact(entityFactForFile(file)))) return null;
       const cache = this.app.metadataCache.getFileCache(file);
@@ -557,6 +559,7 @@ export class HostMetadataPreview {
         if (++inspectedTargets > MAX_PREVIEW_TARGETS && !options.completeHostCover) break;
         if (path === centerPath && !sources.has(target) && this.app.vault.getFileByPath(target)?.extension === "md") continue;
         if (path !== centerPath && target !== centerPath) continue;
+        if (isExcludedFile(this.app.metadataCache, target)) continue;
         resolved[target] = this.app.metadataCache.resolvedLinks[path][target];
       }
       if (metadataAllowed) for (const target in this.app.metadataCache.unresolvedLinks?.[path] ?? {}) {

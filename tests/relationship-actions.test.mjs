@@ -507,7 +507,7 @@ test("pre-restore file events update temporary availability while preserving bac
   class TFile { constructor(path) { this.path = path; this.extension = "md"; } }
   class TFolder { constructor(path) { this.path = path; } }
   const vaultEvents = new Map(), metadataEvents = new Map(), updates = [], cleanup = [], topology = [];
-  const context = { preRestoreListenerCleanup: null, preRestoreChanged: false, indexDirtyRevision: 0,
+  const context = { preRestoreListenerCleanup: null, preRestoreChanged: false, indexDirtyRevision: 0, isExcludedVaultPath: /** This fixture has no Obsidian excluded files. */ () => false,
     preRestoreReasons: new Map(), preRestoreMarkdownPaths: new Map(),
     app: { vault: { on: (kind, callback) => { vaultEvents.set(kind, callback); return kind; }, offref: kind => vaultEvents.delete(kind) },
       metadataCache: { on: (kind, callback) => { metadataEvents.set(kind, callback); return kind; }, offref: kind => metadataEvents.delete(kind) } },
@@ -536,7 +536,7 @@ test("pre-restore file events update temporary availability while preserving bac
 test("visible metadata preview captures the event's new source revision", async () => {
   const handlers = new Map(), file = { path: "Visible.md", extension: "md", stat: { mtime: 2, size: 20 } };
   const captures = [], visible = [], presentation = [];
-  const context = { reactiveIndexListenersRegistered: false, indexDirtyRevision: 0,
+  const context = { reactiveIndexListenersRegistered: false, indexDirtyRevision: 0, isExcludedVaultPath: /** This fixture has no Obsidian excluded files. */ () => false,
     app: { vault: { on: () => ({}), getFileByPath: path => path === file.path ? file : null },
       metadataCache: { on: (kind, callback) => { handlers.set(kind, callback); return {}; } } },
     registerEvent: () => {}, pruneManagedMetadataWrites: () => {}, managedMetadataWrites: new Map(),

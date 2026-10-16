@@ -582,6 +582,22 @@ test("host first-order preview preserves canonical ontology roles, hidden, backl
   f.preview.dispose();
 });
 
+test("host preview leaves out Obsidian's excluded files as link targets, backlink sources and ontology targets", async () => {
+  const f = fixture();
+  const excluded = new Set(["Notes/Ordinary.md", "Notes/Backlink.md", "Notes/Parent.md"]);
+  f.app.metadataCache.isUserIgnored = path => excluded.has(path);
+  const result = await f.preview.build(f.centerPath);
+  assert(result);
+  const center = result.state.pages.get(f.centerPath);
+  for (const path of excluded) {
+    assert.equal(center.neighbours.has(path), false, `${path} is not a preview neighbour`);
+    assert.equal(result.state.pages.has(path), false, `${path} has no preview page`);
+  }
+  assert.equal(center.neighbours.get("Notes/Child.md")?.isChild, true, "included ontology targets keep their role");
+  assert.equal([...result.state.pages.keys()].some(path => path === "Parent" || path.endsWith("/Parent")), false, "no placeholder replaces the excluded ontology target");
+  f.preview.dispose();
+});
+
 test("navigation uses indexed backlinks and source resolve/delete deltas", async () => {
   const f = fixture();
   await f.preview.initializeBacklinks();

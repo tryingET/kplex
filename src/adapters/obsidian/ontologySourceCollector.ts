@@ -7,6 +7,7 @@
  */
 import { TFile } from "obsidian";
 import { canonicalWebUrl, webUrlOriginTarget } from "./urlIdentity";
+import { isExcludedFile } from "./excludedFiles";
 import { nodeId, type GraphNodeKind, type NodeId } from "../../core/graph/model";
 import {
   estimateReferenceRecordBytes,
@@ -83,6 +84,9 @@ export function resolveObsidianReferenceTarget(host: ReferenceSourceCollectorHos
   const candidate = decodeInternalCandidate(reference.rawTarget);
   if (!candidate) return null;
   const destination = host.metadataCache.getFirstLinkpathDest(candidate, sourcePath);
+  // A reference to one of Obsidian's excluded files is no relation. It must not become a
+  // placeholder either: the note exists, and materializing the placeholder would duplicate it.
+  if (destination instanceof TFile && isExcludedFile(host.metadataCache, destination.path)) return null;
   return {
     entity: destination instanceof TFile ? fileRef(destination)
       : { id: nodeId(candidate), kind: "unresolved", state: "unresolved", semanticPath: candidate },

@@ -56,7 +56,7 @@ const initialize=`(()=>{
     let revision=0,wholePasses=0;const plugin={app:f.app,settings,getIndexSourceRevision:()=>revision,
       startupDiagnostics:{mark(){},count(){},phase(){},processed(){},recordWork(key){if(key==='sourceInventoryPasses')wholePasses++;}},
       dirtyMarkdownPaths:new Set(),deletedMarkdownFiles:new WeakSet(),managedCreatedPaths:new Map(),initialIndexComplete:true,rebuildTask:null,
-      renameMetadataSuppressions:new Map(),remapNavigationPaths(){return false;},
+      renameMetadataSuppressions:new Map(),remapNavigationPaths(){return false;},isExcludedVaultPath:/** This fixture has no Obsidian excluded files. */()=>false,
       pruneManagedMetadataWrites(){},adjustCachedMarkdownFileCount(){},notifyIndexStatus(){},hasVisibleKplexSurface:()=>true,scheduleRebuild(){}};
     f.app.vault.getName=()=>name;
     let parseCalls=0;

@@ -76,7 +76,7 @@ function fixture() {
     async setViewState(state) { modes.push(state); this.state = state; },
   };
   leaves.add(leaf);
-  const context = {unloading: false, writes: 0, lastDocumentLeaf: null,
+  const context = {unloading: false, writes: 0, lastDocumentLeaf: null, isExcludedVaultPath: /** This fixture has no Obsidian excluded files. */ () => false,
     settings: {documentSyncMode: "pinned", sidecarMarkdownMode: "preview"},
     app: {vault: {getFileByPath: /** Resolve only current canonical native file identities. */ path => files.get(path) ?? null}, workspace: {revealLeaf: /** Explicit Open may reveal without adding another navigation mutation. */ async () => {}}},
     sidecarLeaves: new Map([[host, leaf]]), passiveSidecarSyncRequests: new WeakMap(),

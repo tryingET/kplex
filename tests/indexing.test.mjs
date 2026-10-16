@@ -461,6 +461,7 @@ for (const file of [
   "src/adapters/obsidian/predicateContracts.ts",
   "src/adapters/obsidian/structuralSourceCollector.ts",
   "src/adapters/obsidian/hostLinkSourceCollector.ts",
+  "src/adapters/obsidian/excludedFiles.ts",
   "src/adapters/obsidian/ontologySourceCollector.ts",
   "src/adapters/obsidian/metadataSourceCollector.ts",
   "src/adapters/obsidian/relationshipMetadataWrite.ts",

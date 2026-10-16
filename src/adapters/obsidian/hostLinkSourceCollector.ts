@@ -5,6 +5,7 @@
  */
 import { TFile } from "obsidian";
 import { nodeId, type GraphNodeKind } from "../../core/graph/model";
+import { isExcludedFile } from "./excludedFiles";
 import {
   MAX_NORMALIZED_SOURCE_RECORDS_PER_BATCH,
   sourceGeneration,
@@ -159,12 +160,18 @@ export function hostLinkRecord(
   };
 }
 
-/** Read the exact count-bearing link-map inputs used by semantic no-op detection. */
+/**
+ * Read the exact count-bearing link-map inputs used by semantic no-op detection. Links from and
+ * resolved links to Obsidian's excluded files are left out, matching the collector.
+ */
 export function readHostLinkSignatureEntries(
   metadataCache: HostLinkSourceCollectorHost["metadataCache"],
   sourcePath: string,
 ): HostLinkSignatureEntries {
-  const resolved = Object.entries(metadataCache.resolvedLinks[sourcePath] ?? {}).sort(([left], [right]) => left.localeCompare(right));
+  if (isExcludedFile(metadataCache, sourcePath)) return { resolved: [], unresolved: [] };
+  const resolved = Object.entries(metadataCache.resolvedLinks[sourcePath] ?? {})
+    .filter(([targetPath]) => !isExcludedFile(metadataCache, targetPath))
+    .sort(([left], [right]) => left.localeCompare(right));
   const unresolved = Object.entries(metadataCache.unresolvedLinks[sourcePath] ?? {}).sort(([left], [right]) => left.localeCompare(right));
   return { resolved, unresolved };
 }
@@ -277,11 +284,13 @@ export class ObsidianHostLinkSourceCollector {
   private *sourceEntries(map: HostLinkMap): IterableIterator<readonly [string, Readonly<Record<string, number>>]> {
     if (this.startingSourcePath !== null) {
       const targets = map[this.startingSourcePath];
-      if (targets) yield [this.startingSourcePath, targets];
+      if (targets && !isExcludedFile(this.host.metadataCache, this.startingSourcePath)) yield [this.startingSourcePath, targets];
       return;
     }
     for (const sourcePath in map) {
       if (!Object.prototype.hasOwnProperty.call(map, sourcePath)) continue;
+      // Links written in Obsidian's excluded files are not part of the Plex.
+      if (isExcludedFile(this.host.metadataCache, sourcePath)) continue;
       const targets = map[sourcePath];
       if (targets) yield [sourcePath, targets];
     }
@@ -327,6 +336,8 @@ export class ObsidianHostLinkSourceCollector {
         const revision = emit ? sourceMapRevision(sourcePath, this.startingRevision) : null;
         for (const targetPath in targets) {
           if (!Object.prototype.hasOwnProperty.call(targets, targetPath)) continue;
+          // A resolved link to an excluded file is dropped, not turned into a placeholder.
+          if (kind === "obsidian-link" && isExcludedFile(this.host.metadataCache, targetPath)) continue;
           const occurrenceCount = targets[targetPath];
           if (typeof occurrenceCount !== "number" || !Number.isSafeInteger(occurrenceCount) || occurrenceCount < 0) return null;
           digest.update(targetPath);
