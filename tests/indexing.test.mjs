@@ -551,6 +551,7 @@ for (const file of [
   "src/application/supportCustomizationProjection.ts",
   "src/adapters/obsidian/supportEnvironment.ts",
   "src/application/frontmatterUnlink.ts",
+  "src/application/startupIndexTiming.ts",
   "src/adapters/obsidian/SupportReportModal.ts",
   "src/adapters/obsidian/actionCommands.ts",
   "src/adapters/obsidian/actionNode.ts",

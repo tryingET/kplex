@@ -99,6 +99,7 @@ import { PartialRelatedFileError } from "./adapters/obsidian/relatedFileOutcome"
 import { capturePlaceholderRelocation, applyPlaceholderRelocation, assertPlaceholderRelocationTarget, placeholderReference, type PlaceholderRelocation } from "./adapters/obsidian/placeholderRelocation";
 import { ActionManager, type ActionContext, type ActionImplementations, type SidecarFoldRoute, type SidecarFoldTarget } from "./application/ActionManager";
 import { frontmatterDeclarationKey } from "./application/frontmatterUnlink";
+import { STARTUP_INDEX_IDLE_TIMEOUT_MS, startupIndexTiming } from "./application/startupIndexTiming";
 import { ACTION_BY_ID, ACTION_RELATION_ROLES, type ActionId, type ActionOutcome, type ActionRequest, type Availability } from "./core/plex/actions";
 import { compileActionBindings, migrateActionPreferences, sanitizeActionPreferences, type ActionPreferencesV1 } from "./core/plex/actionPreferences";
 import { createActionCommandPublisher, type ActionCommandPublisher } from "./adapters/obsidian/actionCommands";
@@ -230,6 +231,10 @@ export default class KplexPlugin extends Plugin {
   private readonly visibleMetadataPaths = new Set<string>();
   private unloading = false;
   private initialIndexTask: Promise<void> | null = null;
+  /** Once-per-session startup of restore, search catalog, listeners and the initial index; later callers join it. */
+  private sessionIndexStart: Promise<void> | null = null;
+  /** Layout-ready postponed the session index until host idle (desktop) or the first K-Plex view (mobile). */
+  private sessionIndexDeferred = false;
   private initialIndexComplete = false;
   private initialSourceIndexIncomplete = false;
   /** In-memory guard against duplicate claims while the persisted one-time startup guidance flag saves. */
@@ -475,76 +480,144 @@ export default class KplexPlugin extends Plugin {
 
         if (this.unloading) return;
         this.layoutReady = true;
-        void this.index.startBackgroundUrlIndex();
-        this.startupDiagnostics.mark("layout-ready");
-        await this.index.primePhysicalSearchCatalog();
-        if (this.unloading) return;
-        const hostCenter = this.startupGraphSeedPaths()[0];
-        if (hostCenter) void this.index.withForegroundPriority(() => this.index.publishHostMetadataPreview(hostCenter), 1);
-
-        // Re-associate a persisted sidecar before normal recent-tab synchronization is allowed to
-        // run. This uses only Obsidian's restored workspace geometry/view state; it must not wait
-        // for the semantic graph or create a new split.
-        for (const restoredHost of this.app.workspace.getLeavesOfType(KPLEX_VIEW_TYPE)) {
-            try {
-              await this.restorePersistedSidecar(restoredHost);
-            } catch (error) {
-              console.error("K-Plex sidecar restore failed", error);
-            }
-        }
-        if (this.unloading) return;
-
-        // Keep the startup guard alive for a little longer than the sidecar polling window so
-        // trailing file-open/active-leaf events from Obsidian cannot immediately undo the restored
-        // relationship. This is intentionally session-only state, never a persisted setting.
-        if (this.startupInitializationTimer !== null) window.clearTimeout(this.startupInitializationTimer);
-        this.startupInitializationTimer = window.setTimeout(() => {
-          this.startupInitializing = false;
-          this.startupInitializationTimer = null;
-          this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
-          this.notifySidecar();
-        }, 3000);
-
-        // Restore only after Obsidian's workspace/vault layout is ready. Restoring earlier can
-        // temporarily hydrate real files as virtual nodes on mobile while the vault tree is still
-        // settling, producing the misleading "ghost then real" startup scene.
-        const startupSeedPaths = this.startupGraphSeedPaths();
-        const restoreStarted = perfNow();
-        this.supportEvents.record("cache-restore-start", { category: "cache" });
-        let restored: Awaited<ReturnType<GraphIndex["restorePersistedSnapshot"]>>;
-        try {
-          this.snapshotRestoreTask ??= this.index.restorePersistedSnapshot(startupSeedPaths);
-          restored = await this.snapshotRestoreTask;
-        } catch (error) {
-          this.supportEvents.record("cache-restore-failure", { category: "cache", outcome: "failed", durationMs: perfNow() - restoreStarted });
-          throw error; // Preserve the existing startup rejection; diagnostics do not repair or retry it.
-        }
-        if (this.unloading) return;
-        this.supportEvents.record("cache-restore-end", { category: "cache", outcome: restored.restored ? "complete" : "unavailable", durationMs: perfNow() - restoreStarted });
-        if (restored.restored) {
-          await this.refreshBookmarkedEntryPoints();
-        }
-        if (this.unloading) return;
-        this.classifyPreRestoreChanges(restored.fresh);
-        if (!restored.fresh) {
-          this.indexDirtyRevision += 1;
-          this.indexBacklogReasons.add(restored.restored ? "startup:stale-snapshot" : "startup:no-snapshot");
-        }
-
-        this.preRestoreListenerCleanup?.();
-        this.registerReactiveIndexListeners();
-        this.registerOntologyContextMenu();
-        // Prewarm exactly once per Obsidian session when it is safe to do so. A fresh persisted
-        // semantic snapshot makes this effectively free. On iOS, a first-ever large-vault cold
-        // scan is deferred until K-Plex is actually opened: repeatedly rebuilding 20k notes in a
-        // hidden WebView was responsible for a restart loop on iPad. The per-file IndexedDB body
-        // checkpoints still let an interrupted first scan resume instead of starting at file zero.
-        const noteCount = this.app.vault.getMarkdownFiles().length;
-        const largeIosExpensiveRebuild = !this.index.isOnDemandMode() && Platform.isIosApp && !restored.fresh && !this.index.hasPendingSnapshotHydration() &&
-          (!restored.restored || !this.index.hasIncrementalRestorePatch()) && noteCount > 5000;
-        if (!largeIosExpensiveRebuild) void this.finishStartupIndexPreparation();
+        await this.startOrDeferSessionIndex();
       })();
     });
+  }
+
+  /**
+   * Decide at layout-ready when the once-per-session index starts. A restored open K-Plex view
+   * starts it now, as before. Otherwise desktop waits for host idle time and mobile for the first
+   * K-Plex view, so a session that never opens K-Plex holds no whole-vault graph, search catalog
+   * or web-link scan. Until the deferred start, the pre-restore change fence keeps recording vault
+   * and metadata changes; the start classifies them against the restored snapshot as before.
+   */
+  private async startOrDeferSessionIndex(): Promise<void> {
+    const timing = startupIndexTiming({ mobile: Platform.isMobile, viewOpen: this.openKplexViews > 0 || this.hasVisibleKplexSurface() });
+    if (timing === "now") return this.startSessionIndex();
+    this.sessionIndexDeferred = true;
+    this.startupDiagnostics.mark("layout-ready");
+    this.armStartupInitializationGuard();
+    this.registerOntologyContextMenu();
+    if (timing === "idle") this.scheduleIdleSessionIndex();
+  }
+
+  /** Start the session index exactly once; deferred callers (idle, view open, explicit rebuild) join the same startup. */
+  private startSessionIndex(): Promise<void> {
+    return this.sessionIndexStart ??= this.runSessionIndexStartup();
+  }
+
+  /**
+   * Start or join a deferred session index before demand-driven index work. An immediate startup is
+   * owned by layout-ready and is not awaited here, which keeps its previous view-open ordering.
+   */
+  private async joinDeferredSessionIndex(): Promise<void> {
+    if (!this.sessionIndexDeferred) return;
+    try {
+      await this.startSessionIndex();
+    } catch (error) {
+      // As before, a failed snapshot restore does not block demand-driven indexing.
+      console.error("K-Plex session index startup failed", error);
+    }
+  }
+
+  /**
+   * Schedule the deferred desktop start for the next host idle period. The timeout bounds the wait
+   * in a continuously busy window; unload cancels a start that has not run yet.
+   */
+  private scheduleIdleSessionIndex(): void {
+    const handle = window.requestIdleCallback(() => {
+      if (!this.unloading) void this.startSessionIndex();
+    }, { timeout: STARTUP_INDEX_IDLE_TIMEOUT_MS });
+    this.register(() => window.cancelIdleCallback(handle));
+  }
+
+  /**
+   * Keep the startup guard alive for a little longer than the sidecar polling window so trailing
+   * file-open/active-leaf events from Obsidian cannot immediately undo the restored relationship.
+   * This is intentionally session-only state, never a persisted setting.
+   */
+  private armStartupInitializationGuard(): void {
+    if (this.startupInitializationTimer !== null) window.clearTimeout(this.startupInitializationTimer);
+    this.startupInitializationTimer = window.setTimeout(() => {
+      this.startupInitializing = false;
+      this.startupInitializationTimer = null;
+      this.rememberDocumentLeaf(this.app.workspace.getMostRecentLeaf());
+      this.notifySidecar();
+    }, 3000);
+  }
+
+  /**
+   * Session index startup, run once from layout-ready (immediate) or from the first idle period,
+   * K-Plex view or explicit rebuild (deferred): web-link scan, physical search catalog, host
+   * preview, sidecar re-association, cached snapshot restore, pre-restore change classification,
+   * reactive listeners and the initial index. A deferred start skips what layout-ready already did
+   * (startup guard, editor menu) and leaves sidecar re-association to the view that opens.
+   */
+  private async runSessionIndexStartup(): Promise<void> {
+    const deferred = this.sessionIndexDeferred;
+    void this.index.startBackgroundUrlIndex();
+    if (!deferred) this.startupDiagnostics.mark("layout-ready");
+    await this.index.primePhysicalSearchCatalog();
+    if (this.unloading) return;
+    const hostCenter = this.startupGraphSeedPaths()[0];
+    if (hostCenter) void this.index.withForegroundPriority(() => this.index.publishHostMetadataPreview(hostCenter), 1);
+
+    // Re-associate a persisted sidecar before normal recent-tab synchronization is allowed to
+    // run. This uses only Obsidian's restored workspace geometry/view state; it must not wait
+    // for the semantic graph or create a new split. A deferred start had no open K-Plex view at
+    // layout-ready; a view opened later re-associates its own sidecar in onKplexViewOpened.
+    if (!deferred) {
+      for (const restoredHost of this.app.workspace.getLeavesOfType(KPLEX_VIEW_TYPE)) {
+        try {
+          await this.restorePersistedSidecar(restoredHost);
+        } catch (error) {
+          console.error("K-Plex sidecar restore failed", error);
+        }
+      }
+    }
+    if (this.unloading) return;
+
+    if (!deferred) this.armStartupInitializationGuard();
+
+    // Restore only after Obsidian's workspace/vault layout is ready. Restoring earlier can
+    // temporarily hydrate real files as virtual nodes on mobile while the vault tree is still
+    // settling, producing the misleading "ghost then real" startup scene.
+    const startupSeedPaths = this.startupGraphSeedPaths();
+    const restoreStarted = perfNow();
+    this.supportEvents.record("cache-restore-start", { category: "cache" });
+    let restored: Awaited<ReturnType<GraphIndex["restorePersistedSnapshot"]>>;
+    try {
+      this.snapshotRestoreTask ??= this.index.restorePersistedSnapshot(startupSeedPaths);
+      restored = await this.snapshotRestoreTask;
+    } catch (error) {
+      this.supportEvents.record("cache-restore-failure", { category: "cache", outcome: "failed", durationMs: perfNow() - restoreStarted });
+      throw error; // Preserve the existing startup rejection; diagnostics do not repair or retry it.
+    }
+    if (this.unloading) return;
+    this.supportEvents.record("cache-restore-end", { category: "cache", outcome: restored.restored ? "complete" : "unavailable", durationMs: perfNow() - restoreStarted });
+    if (restored.restored) {
+      await this.refreshBookmarkedEntryPoints();
+    }
+    if (this.unloading) return;
+    this.classifyPreRestoreChanges(restored.fresh);
+    if (!restored.fresh) {
+      this.indexDirtyRevision += 1;
+      this.indexBacklogReasons.add(restored.restored ? "startup:stale-snapshot" : "startup:no-snapshot");
+    }
+
+    this.preRestoreListenerCleanup?.();
+    this.registerReactiveIndexListeners();
+    if (!deferred) this.registerOntologyContextMenu();
+    // Prewarm exactly once per Obsidian session when it is safe to do so. A fresh persisted
+    // semantic snapshot makes this effectively free. On iOS, a first-ever large-vault cold
+    // scan is deferred until K-Plex is actually opened: repeatedly rebuilding 20k notes in a
+    // hidden WebView was responsible for a restart loop on iPad. The per-file IndexedDB body
+    // checkpoints still let an interrupted first scan resume instead of starting at file zero.
+    const noteCount = this.app.vault.getMarkdownFiles().length;
+    const largeIosExpensiveRebuild = !this.index.isOnDemandMode() && Platform.isIosApp && !restored.fresh && !this.index.hasPendingSnapshotHydration() &&
+      (!restored.restored || !this.index.hasIncrementalRestorePatch()) && noteCount > 5000;
+    if (!largeIosExpensiveRebuild) void this.finishStartupIndexPreparation();
   }
 
   /**
@@ -1304,12 +1377,14 @@ export default class KplexPlugin extends Plugin {
 
   async ensureIndexReady(reason = "view-open"): Promise<void> {
     if (!this.layoutReady) return;
+    await this.joinDeferredSessionIndex();
     await this.ensureInitialIndex();
     if (this.unloading) return;
     await this.rebuildIndex(false, this.index.size === 0, reason);
   }
 
   async rebuildIndex(showNotice = false, force = false, reason = "direct"): Promise<void> {
+    if (this.layoutReady) await this.joinDeferredSessionIndex();
     await this.performRebuild(showNotice, force, reason, false);
   }
 
