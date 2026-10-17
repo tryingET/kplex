@@ -522,6 +522,15 @@ export default class KplexPlugin extends Plugin {
   }
 
   /**
+   * Whether a deferred mobile start has lost its only reason to build: every K-Plex view closed
+   * while the start awaited restore or the search catalog. The initial index then waits for the
+   * next open instead of building a hidden whole-vault graph (desktop deferral builds at idle).
+   */
+  private deferredStartLostDemand(): boolean {
+    return this.sessionIndexDeferred && Platform.isMobile && this.openKplexViews === 0 && !this.hasVisibleKplexSurface();
+  }
+
+  /**
    * Schedule the deferred desktop start for the next host idle period. The timeout bounds the wait
    * in a continuously busy window; unload cancels a start that has not run yet.
    */
@@ -617,7 +626,7 @@ export default class KplexPlugin extends Plugin {
     const noteCount = this.app.vault.getMarkdownFiles().length;
     const largeIosExpensiveRebuild = !this.index.isOnDemandMode() && Platform.isIosApp && !restored.fresh && !this.index.hasPendingSnapshotHydration() &&
       (!restored.restored || !this.index.hasIncrementalRestorePatch()) && noteCount > 5000;
-    if (!largeIosExpensiveRebuild) void this.finishStartupIndexPreparation();
+    if (!largeIosExpensiveRebuild && !this.deferredStartLostDemand()) void this.finishStartupIndexPreparation();
   }
 
   /**
@@ -820,6 +829,9 @@ export default class KplexPlugin extends Plugin {
       mark("vault:rename", item instanceof TFile ? item : undefined);
       if (item instanceof TFile) this.index.updateHostFileAvailability(oldPath, item);
       else if (item instanceof TFolder) void this.index.updateHostFolderAvailability(oldPath, item);
+      // A deferred session index can keep this fence active for a whole mobile session. Keep the
+      // persisted center, history, pins and sidecar path in step with renames meanwhile.
+      if (this.remapNavigationPaths(oldPath, item.path, item instanceof TFolder)) void this.saveSettings(false, false);
     });
     const resolved = this.app.metadataCache.on("resolve", (file) => {
       if (this.app.vault.getFileByPath(file.path) === file) {
@@ -1378,6 +1390,7 @@ export default class KplexPlugin extends Plugin {
   async ensureIndexReady(reason = "view-open"): Promise<void> {
     if (!this.layoutReady) return;
     await this.joinDeferredSessionIndex();
+    if (this.unloading || this.deferredStartLostDemand()) return;
     await this.ensureInitialIndex();
     if (this.unloading) return;
     await this.rebuildIndex(false, this.index.size === 0, reason);
