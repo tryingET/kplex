@@ -969,6 +969,8 @@ export default class KplexPlugin extends Plugin {
           this.index.invalidateHostStructure();
           this.cachedMarkdownFileCount = null;
           this.dirtyMarkdownPaths.delete(oldPath);
+          // Persisted center, history and pins follow the file even while it is excluded.
+          if (this.remapNavigationPaths(oldPath, renamed.path, folder)) void this.saveSettings(false, false);
           this.scheduleRebuild("vault:excluded-boundary");
           return;
         }

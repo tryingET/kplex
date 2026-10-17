@@ -15,7 +15,7 @@ import ts from 'typescript';
 import { contributorBrowserBundle } from './support/contributorBrowserFixture.mjs';
 
 const bundle = await contributorBrowserBundle(['src/index/GraphIndex.ts', 'src/index/IndexSnapshot.ts',
-  'src/adapters/obsidian/excludedFiles.ts', 'src/adapters/obsidian/ontologySourceCollector.ts']);
+  'src/adapters/obsidian/excludedFiles.ts', 'src/adapters/obsidian/ontologySourceCollector.ts', 'src/index/IndexedDbCache.ts']);
 
 /** Obsidian's MetadataCache.updateUserIgnoreFilters/isUserIgnored, reduced to its compiled form. */
 function userIgnore(filters) {
@@ -52,7 +52,8 @@ function fixture(filters = ['Archive/', 'Notes/Secret.md']) {
     getFirstLinkpathDest: (link) => files.get(link) ?? files.get(`${link}.md`) ?? null,
     resolvedLinks: { 'Notes/A.md': { 'Notes/B.md': 1, 'Archive/Old.md': 1, 'Notes/Secret.md': 1 }, 'Archive/Old.md': { 'Notes/A.md': 1 }, 'Notes/B.md': {} },
     unresolvedLinks: { 'Notes/A.md': { Missing: 1 }, 'Archive/Old.md': { Gone: 1 } } };
-  const app = { saveLocalStorage() {}, metadataCache, vault: { ...events, getName: () => 'excluded-files',
+  const app = { saveLocalStorage() {}, metadataCache, internalPlugins: { getPluginById: () => null }, metadataTypeManager: { getPropertyInfo: () => ({ widget: 'text' }) },
+    vault: { ...events, getName: () => 'excluded-files',
     getRoot: () => root, getFileByPath: path => files.get(path) ?? null, getFolderByPath: path => folders.get(path) ?? null,
     getMarkdownFiles: () => [...files.values()].filter(f => f.extension === 'md'), getFiles: () => [...files.values()],
     cachedRead: async f => { reads.push(f.path); return `Body of ${f.path}`; },
@@ -188,7 +189,8 @@ function listenerHost() {
     preRestoreReasons: new Map(), preRestoreMarkdownPaths: new Map(), startupInitializing: false,
     registerEvent() {}, register() {}, pruneManagedMetadataWrites() {}, notifyIndexStatus() {}, settlePatchOnlyBacklogIfIdle() {},
     adjustCachedMarkdownFileCount: record('count'), countDeletedMarkdownFile: record('count-deleted'), hasVisibleKplexSurface: () => true,
-    remapNavigationPaths: () => false, scheduleRebuild: record('rebuild'), scheduleVisibleMetadataRefresh() {},
+    remapNavigationPaths: (from, to, folder) => { effects.push(['remap', from, to, folder]); return false; }, saveSettings: async () => {},
+    scheduleRebuild: record('rebuild'), scheduleVisibleMetadataRefresh() {},
     syncLeafToKplexEnabled: () => { throw new Error('excluded files must be refused before sync state is read'); },
     index: new Proxy({ hasPhysicalBaseline: () => true, refreshVisiblePresentation: async () => {}, refreshVisibleHostMetadataPreviews: () => false },
       { get: (target, name) => target[name] ?? record(`index.${String(name)}`) }),
@@ -219,8 +221,9 @@ test('Given a note moved into or out of the excluded files, when it is renamed, 
   host.dirtyMarkdownPaths.add('Notes/B.md');
   handlers.get('rename')(new TFile('Archive/B.md'), 'Notes/B.md');
   handlers.get('rename')(new TFile('Notes/Restored.md'), 'Archive/Old.md');
-  assert.deepEqual(effects, [['index.invalidateHostStructure'], ['rebuild', 'vault:excluded-boundary'], ['index.invalidateHostStructure'], ['rebuild', 'vault:excluded-boundary']],
-    'no path remap into or out of the exclusion');
+  assert.deepEqual(effects, [['index.invalidateHostStructure'], ['remap', 'Notes/B.md', 'Archive/B.md', false], ['rebuild', 'vault:excluded-boundary'],
+    ['index.invalidateHostStructure'], ['remap', 'Archive/Old.md', 'Notes/Restored.md', false], ['rebuild', 'vault:excluded-boundary']],
+    'no index path remap across the exclusion, but persisted navigation follows the file');
   assert.equal(host.dirtyMarkdownPaths.has('Notes/B.md'), false);
   assert.equal(host.cachedMarkdownFileCount, null, 'the indexed-note total is recounted');
 });
@@ -233,7 +236,7 @@ test('Given the pre-restore fence, when excluded files change, then nothing is m
   assert.equal(host.preRestoreChanged, false);
   assert.deepEqual(effects, []);
   handlers.get('rename')(new TFile('Archive/B.md'), 'Notes/B.md');
-  assert.deepEqual(effects, [['index.invalidateHostStructure'], ['index.updateHostFileAvailability', 'Notes/B.md']]);
+  assert.deepEqual(effects.filter(([name]) => name.startsWith('index.')), [['index.invalidateHostStructure'], ['index.updateHostFileAvailability', 'Notes/B.md']]);
   assert.equal(host.preRestoreChanged, true, 'the move still marks a structural change for restore');
 });
 
@@ -270,5 +273,50 @@ test('Given web-link owners persisted for notes that are excluded now, when the 
     assert.deepEqual(deleted, ['Archive/Old.md'], 'the persisted owner of the excluded note is deleted');
     assert.equal(index.urlOwners.has('Archive/Old.md'), false);
     assert.equal(index.urlOwners.has('Notes/A.md'), true, 'included owners are restored as before');
+  } finally { index.destroy(); }
+});
+
+test('Given a folder-only filter, when files below it are listed, then the subtree is excluded like the structural walk prunes it', async () => {
+  const { M, app } = fixture(['/^Archive\\/$/']);
+  assert.equal(M.isExcludedFolder(app.metadataCache, 'Archive'), true);
+  assert.equal(M.isExcludedFile(app.metadataCache, 'Archive/Old.md'), true, 'an excluded folder excludes everything inside it');
+  assert.equal(M.isExcludedFolder(app.metadataCache, 'Archive/Deep'), true);
+  assert.deepEqual(M.indexedMarkdownFiles(app).map(f => f.path), ['Notes/A.md', 'Notes/B.md', 'Notes/Secret.md']);
+  assert.deepEqual([...M.structuralMarkdownSourceOrder(app.vault, app.metadataCache).keys()].sort(), M.indexedMarkdownFiles(app).map(f => f.path).sort(),
+    'eager inventory sees the same Markdown set from the walk and from the file list');
+  const records = await collectAll(new M.ObsidianStructuralSourceCollector(app, runtime));
+  assert.equal(JSON.stringify(records).includes('"Archive/Old.md"'), false);
+});
+
+test('Given a source whose link target becomes excluded, when its environment is observed, then a persisted head no longer matches', () => {
+  const { M, app, metadataCache } = fixture();
+  const acquisition = new M.ObsidianSourceAcquisition(app, new M.KplexIndexedDbCache(app.vault), async () => ({ urls: [], inlineFields: {}, inlineFieldOccurrences: [] }));
+  const cache = { frontmatter: {} };
+  const excluded = JSON.parse(acquisition.environment(cache, 'Notes/A.md'));
+  assert.deepEqual(excluded.excluded, ['Archive/Old.md', 'Notes/Secret.md'], 'the excluded targets of this source are part of its environment');
+  metadataCache.isUserIgnored = userIgnore([]);
+  const included = acquisition.environment(cache, 'Notes/A.md');
+  assert.equal('excluded' in JSON.parse(included), false, 'without excluded targets the environment keeps its previous shape');
+  assert.notEqual(JSON.stringify(excluded), included, 'changing the list changes the observation, so the head is re-resolved');
+});
+
+test('Given web-link owners for notes that are excluded now, when the list change is applied, then those owners are retired', async () => {
+  const { M, app, advance } = fixture();
+  const settings = { indexingMode: 'on-demand', hierarchy: { hidden: [], parents: [], children: [], leftFriends: [], rightFriends: [], previous: [], next: [], exclusions: [] },
+    inferAllLinksAsFriends: false, inverseInfer: false, showFullTagName: true, tagStyleList: [], baseNodeStyle: { maxLabelLength: 30 }, maxItemCount: 30,
+    pinnedNodes: [], excludeFilepaths: [], nameFields: '', noteTypeField: 'Type', primaryTagField: 'Style' };
+  const index = new M.GraphIndex({ app, settings, getIndexSourceRevision: () => 0 }, app);
+  const deleted = [];
+  Object.assign(index.indexedDb, { open: async () => ({}), purgeAndClose: async () => true, deleteUrlOwner: async path => { deleted.push(path); return true; } });
+  try {
+    for (const file of [app.vault.getFileByPath('Archive/Old.md'), app.vault.getFileByPath('Notes/A.md')])
+      index.urlOwners.set(file.path, { file, mtime: file.stat.mtime, size: file.stat.size, event: 0 });
+    let settled = false;
+    Promise.resolve(index.retireExcludedUrlOwners()).then(() => { settled = true; });
+    for (let step = 0; step < 200 && !settled; step++) await advance(50);
+    assert.equal(settled, true);
+    assert.deepEqual(deleted, ['Archive/Old.md']);
+    assert.equal(index.urlOwners.has('Archive/Old.md'), false);
+    assert.equal(index.urlOwners.has('Notes/A.md'), true);
   } finally { index.destroy(); }
 });

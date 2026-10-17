@@ -10,8 +10,10 @@
  * Obsidian exposes its compiled filter list as `MetadataCache.isUserIgnored(path)`, which is not
  * part of the public typings. It is feature-detected here; without it nothing is excluded, which is
  * the previous behaviour. Plain filters are path prefixes such as `Archive/`, so folder paths are
- * tested with a trailing slash. The vault root is never excluded. Obsidian caches each answer per
- * path and clears that cache when the filter list changes.
+ * tested with a trailing slash. A folder the list matches excludes everything inside it, also for a
+ * folder-only regular expression such as `/^Archive\/$/`; so the tree walk, which skips an excluded
+ * folder's subtree, and every flat file list agree. The vault root is never excluded. Obsidian
+ * caches each answer per path and clears that cache when the filter list changes.
  */
 import type { App, TFile } from "obsidian";
 
@@ -40,7 +42,8 @@ function hasUserIgnoreProbe(metadataCache: object): metadataCache is UserIgnoreP
  * @returns true only when Obsidian reports the path as excluded
  */
 export function isExcludedFile(metadataCache: object, path: string): boolean {
-  return hasUserIgnoreProbe(metadataCache) && metadataCache.isUserIgnored(path) === true;
+  if (!hasUserIgnoreProbe(metadataCache)) return false;
+  return metadataCache.isUserIgnored(path) === true || hasExcludedAncestor(metadataCache, path);
 }
 
 /**
@@ -51,8 +54,22 @@ export function isExcludedFile(metadataCache: object, path: string): boolean {
  * @returns true only when Obsidian reports the folder (as a path prefix) as excluded
  */
 export function isExcludedFolder(metadataCache: object, path: string): boolean {
-  if (path === "" || path === "/") return false;
-  return hasUserIgnoreProbe(metadataCache) && metadataCache.isUserIgnored(`${path}/`) === true;
+  if (path === "" || path === "/" || !hasUserIgnoreProbe(metadataCache)) return false;
+  return metadataCache.isUserIgnored(`${path}/`) === true || hasExcludedAncestor(metadataCache, path);
+}
+
+/**
+ * Whether any folder above a path is excluded (each tested as `folder/`).
+ *
+ * @param metadataCache - a metadata cache with Obsidian's ignore filter
+ * @param path - vault-relative file or folder path
+ * @returns true when an ancestor folder is on the list
+ */
+function hasExcludedAncestor(metadataCache: UserIgnoreProbe, path: string): boolean {
+  for (let slash = path.indexOf("/"); slash > 0; slash = path.indexOf("/", slash + 1)) {
+    if (metadataCache.isUserIgnored(path.slice(0, slash + 1)) === true) return true;
+  }
+  return false;
 }
 
 /**

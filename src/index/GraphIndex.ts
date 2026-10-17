@@ -748,6 +748,7 @@ export class GraphIndex {
     if (this.persistentCachePurged || this.diagnosticsClosed) return false;
     if (rebuildBaseline) {
       // A topology epoch retires both the old baseline and demanded owner continuations.
+      void this.retireExcludedUrlOwners();
       this.onDemandBaselineRevision += 1;
       this.generation += 1;
       this.onDemandBaselineTask = null;
@@ -4221,7 +4222,7 @@ export class GraphIndex {
     const existing = this.urlOwnerTasks.get(path);
     if (existing) return existing;
     const file = this.app.vault.getFileByPath(path), event = this.urlOwnerEvents.get(path) ?? 0;
-    if (!file || file.extension !== "md") { this.foregroundUrlOwners.delete(path); return this.retireUrlOwner(path); }
+    if (!file || file.extension !== "md" || isExcludedFile(this.app.metadataCache, path)) { this.foregroundUrlOwners.delete(path); return this.retireUrlOwner(path); }
     const revision = captureFileRevision(file);
     const current = (): boolean => !this.diagnosticsClosed && !this.persistentCachePurged
       && fileRevisionMatches(file, revision) && this.app.vault.getFileByPath(path) === file
@@ -4270,6 +4271,18 @@ export class GraphIndex {
    * Remove deleted/renamed URL incidence canonically, retaining shared targets and origin lifetimes.
    * Its synchronous commit may consume a bounded private delta, never a displayed generation.
    */
+  /**
+   * Retire web-link owners of notes that are on Obsidian's excluded-files list now, for example after
+   * the list changed in this session. Runs at the start of every graph rebuild; each owner goes
+   * through the normal refresh, which retires its evidence and deletes its persisted record.
+   *
+   * @returns once every affected owner is retired
+   */
+  async retireExcludedUrlOwners(): Promise<void> {
+    const excluded = [...this.urlOwners.keys()].filter((path) => isExcludedFile(this.app.metadataCache, path));
+    await Promise.all(excluded.map((path) => this.refreshUrlOwner(path)));
+  }
+
   private retireUrlOwner(path: string): Promise<void> {
     this.urlPendingPublications++;
     const task = this.urlPublicationLane.catch(() => {}).then(() => this.workScheduler.run(INDEX_WORK_PRIORITY.visibleNeighborhood, async () => {
@@ -6383,6 +6396,7 @@ export class GraphIndex {
       }
       this.building = true;
       this.retirePhysicalFolderInventory();
+      void this.retireExcludedUrlOwners();
       this.semanticPreparationDiagnostics = { ...this.semanticPreparationDiagnostics,
         fullBuilds: this.semanticPreparationDiagnostics.fullBuilds + 1 };
       const run = ++this.generation;

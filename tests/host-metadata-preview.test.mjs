@@ -60,8 +60,11 @@ function folderFixture(options = {}) {
     getFileByPath: path => files.get(path) ?? null, getFiles() { throw new Error("global inventory forbidden"); },
     getMarkdownFiles() { throw new Error("global inventory forbidden"); },
     read() { throw new Error("body reads forbidden"); }, cachedRead() { throw new Error("body reads forbidden"); } },
-    get metadataCache() { if (options.hostMetadata) return options.hostMetadata;
-      throw new Error("folder membership does not need metadata or backlink catalogs"); } };
+    get metadataCache() { if (options.hostMetadata) return options.hostMetadata; return exclusionOnlyCache; } };
+  // Folder membership needs no metadata or backlink catalog; only Obsidian's excluded-files filter is allowed.
+  const exclusionOnlyCache = new Proxy({ isUserIgnored: options.isUserIgnored ?? (() => false) }, { get(target, key) {
+    if (Object.prototype.hasOwnProperty.call(target, key)) return target[key];
+    throw new Error("folder membership does not need metadata or backlink catalogs"); } });
   let yields = 0, workClock = 0;
   const preview = new HostMetadataPreview(app, () => liveSettings, { now: () => options.now?.() ?? ++workClock,
     yield: async () => { yields++; await options.onYield?.(); }, isCurrent: () => options.isCurrent?.() ?? true,
@@ -396,6 +399,22 @@ test("root and nested native folder previews expose direct canonical membership 
       assert.equal(f.preview.initialized, false, "folder navigation must not initialize the global backlink map");
     } finally { f.preview.dispose(); }
   }
+});
+
+test("folder previews leave out Obsidian's excluded files and folders from members and counts", async () => {
+  const f = folderFixture({ isUserIgnored: path => path === "Notes/Secret.md" || path.startsWith("Notes/Archive/") });
+  f.addFolder("Notes/Archive"); f.addFolder("Notes/Kept"); f.addFile("Notes/Note.md"); f.addFile("Notes/Secret.md");
+  try {
+    const result = await f.preview.build("folder:Notes");
+    assert(result);
+    const center = result.state.pages.get("folder:Notes");
+    for (const path of ["Notes/Secret.md", "folder:Notes/Archive"]) {
+      assert.equal(center.neighbours.has(path), false, `${path} is not a member`);
+      assert.equal(result.state.pages.has(path), false, `${path} has no preview page`);
+    }
+    for (const path of ["Notes/Note.md", "folder:Notes/Kept"]) assert(center.neighbours.has(path), `${path} stays a member`);
+    assert.equal(result.structuralGates.get("folder:Notes").bottom.visibleCount, 2, "excluded members are not counted");
+  } finally { f.preview.dispose(); }
 });
 
 test("empty folder membership proves zeros without claiming complete semantic incidence", async () => {

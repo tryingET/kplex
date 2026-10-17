@@ -32,7 +32,7 @@ import { createGraphState, type GraphState } from "./GraphState";
 import { extractLinksFromValue, iterateFrontmatterAliasSteps, mergeFileMetadata, normalizeFieldName, type ParsedBodyMetadata } from "./fieldParser";
 import { cachedCenterTargetVisibility, captureCachedCenterGateSettings, projectCachedCenterGates,
   type CachedCenterGates } from "./CachedCenterGateProjection";
-import { isExcludedFile } from "../adapters/obsidian/excludedFiles";
+import { isExcludedFile, isExcludedFolder } from "../adapters/obsidian/excludedFiles";
 
 const MAX_PREVIEW_SOURCES = 64;
 const MAX_PREVIEW_TARGETS = 256;
@@ -58,6 +58,8 @@ export type HostMetadataPreviewResult = Readonly<{
 
 type FolderMemberCapture = Readonly<{
   member: TFolder | TFile;
+  /** Position in the native `folder.children` array; excluded members leave gaps. */
+  childIndex: number;
   path: string;
   name: string;
   parent: TFolder | null;
@@ -706,11 +708,15 @@ export class HostMetadataPreview {
     const paths = new Set<string>();
     // Snapshot primitive host identities before the first await. This is O(direct members), not a
     // normalized graph/evidence mirror; later chunks and final validation must use this observation.
+    let childIndex = -1;
     for (const member of children) {
+      childIndex += 1;
       if (!(member instanceof TFile) && !(member instanceof TFolder)) return null;
       if (identities.has(member) || paths.has(member.path) || member.parent !== folder) return null;
+      // Obsidian's excluded files and folders are not members of the Plex, so they are neither shown nor counted.
+      if (member instanceof TFile ? isExcludedFile(this.app.metadataCache, member.path) : isExcludedFolder(this.app.metadataCache, member.path)) continue;
       identities.add(member); paths.add(member.path);
-      captured.push({ member, path: member.path, name: member.name, parent: member.parent,
+      captured.push({ member, childIndex, path: member.path, name: member.name, parent: member.parent,
         ...(member instanceof TFile ? { file: { mtime: member.stat.mtime, ctime: member.stat.ctime,
           size: member.stat.size, basename: member.basename, extension: member.extension } } : {}) });
     }
@@ -770,11 +776,11 @@ export class HostMetadataPreview {
     let retainedChildren = 0;
     let sliceStarted = this.runtime.now();
     const bottom = { hasAny: false, visibleCount: 0 };
-    for (let start = 0; start < childCount; start += FOLDER_COUNT_CHUNK_SIZE) {
+    for (let start = 0; start < captured.length; start += FOLDER_COUNT_CHUNK_SIZE) {
       if (!current()) return null;
       const facts: NormalizedSourceRecord[] = [centerFact];
       const childFacts: Array<Readonly<{ fact: SourceEntityFact; occurrence: NormalizedSourceRecord }>> = [];
-      for (let index = start; index < Math.min(childCount, start + FOLDER_COUNT_CHUNK_SIZE); index++) {
+      for (let index = start; index < Math.min(captured.length, start + FOLDER_COUNT_CHUNK_SIZE); index++) {
         const member = captured[index].member;
         const fact = member instanceof TFile ? entityFactForFile(member)
           : entityFactForFolder(member, sourceRevision(`host-preview-child:${revision}:${member.path}`));
@@ -812,7 +818,7 @@ export class HostMetadataPreview {
     // This final synchronous primitive identity pass closes the observation after the last await.
     // It retains no full normalized topology/evidence and cannot recurse into child folders.
     for (let index = 0; index < captured.length; index++) {
-      const item = captured[index], member = children[index];
+      const item = captured[index], member = children[item.childIndex];
       if (member !== item.member || member.path !== item.path || member.name !== item.name || member.parent !== item.parent) return null;
       if (member instanceof TFile) {
         if (!item.file || this.app.vault.getFileByPath(item.path) !== member
