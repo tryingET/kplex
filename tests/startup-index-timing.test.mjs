@@ -48,7 +48,7 @@ function plugin({ mobile, openViews = 0, visible = false, window = idleWindow(),
   const startSessionIndex = productionFunction("src/main.ts", "startSessionIndex", {});
   const context = {
     calls, cleanup, window,
-    unloading: false, layoutReady: true, openKplexViews: openViews, sessionIndexStart: null, sessionIndexDeferred: false,
+    unloading: false, layoutReady: true, openKplexViews: openViews, sessionIndexStart: null, sessionIndexDeferred: false, initialIndexComplete: false,
     startupDiagnostics: { mark: name => calls.push(`mark:${name}`) },
     hasVisibleKplexSurface: () => visible,
     armStartupInitializationGuard: () => calls.push("guard"),
@@ -62,7 +62,7 @@ function plugin({ mobile, openViews = 0, visible = false, window = idleWindow(),
   context.startSessionIndex = (...args) => startSessionIndex.call(context, ...args);
   context.scheduleIdleSessionIndex = (...args) => productionFunction("src/main.ts", "scheduleIdleSessionIndex", { window, STARTUP_INDEX_IDLE_TIMEOUT_MS }).call(context, ...args);
   context.startOrDeferSessionIndex = (...args) => productionFunction("src/main.ts", "startOrDeferSessionIndex", { Platform, startupIndexTiming }).call(context, ...args);
-  context.deferredStartLostDemand = (...args) => productionFunction("src/main.ts", "deferredStartLostDemand", { Platform }).call(context, ...args);
+  context.initialBuildLostDemand = (...args) => productionFunction("src/main.ts", "initialBuildLostDemand", { Platform }).call(context, ...args);
   context.joinDeferredSessionIndex = (...args) => productionFunction("src/main.ts", "joinDeferredSessionIndex", {}).call(context, ...args);
   context.rebuildIndex = (...args) => productionFunction("src/main.ts", "rebuildIndex", {}).call(context, ...args);
   context.ensureIndexReady = (...args) => productionFunction("src/main.ts", "ensureIndexReady", {}).call(context, ...args);
@@ -153,12 +153,115 @@ test("Given mobile, when the last view closes while the deferred start awaits re
   assert.deepEqual(kplex.calls.slice(3), ["session-index", "initial-index", "rebuild:view-open"], "reopening resumes without a second session start");
 });
 
-test("Given desktop, when no view is open after the idle start, then the initial index still runs in the background", async () => {
-  const kplex = plugin({ mobile: false });
+/**
+ * Plugin double that runs the real startup chain down to build admission: the session start, the
+ * initial index, the rebuild coordinator and the view open/close hooks all come from main.ts. The
+ * index records which build it was asked for; metadata stability is held open by the test.
+ */
+function startupChain({ mobile, ios = false, metadataStable = Promise.resolve(), hydration = null }) {
+  const calls = [], builds = [];
+  const Platform = { isMobile: mobile, isIosApp: ios };
+  const window = { ...idleWindow(), setTimeout: callback => { setTimeout(callback, 0); return 1; }, clearTimeout() {} };
+  // Host helpers the startup methods may read; the indexed Markdown files are the vault's here.
+  const dependencies = { Platform, window, startupIndexTiming, STARTUP_INDEX_IDLE_TIMEOUT_MS, KPLEX_VIEW_TYPE: "k-plex", perfNow: () => 0, Notice: class {},
+    indexedMarkdownFiles: app => app.vault.getMarkdownFiles() };
+  let built = false, hydrated = false;
+  const context = {
+    calls, builds, window,
+    unloading: false, layoutReady: true, openKplexViews: 0, sessionIndexStart: null, sessionIndexDeferred: false,
+    initialIndexTask: null, initialIndexComplete: false, metadataStabilized: false, metadataStabilityPromise: null,
+    indexDirty: false, indexDirtyRevision: 0, indexBacklogReasons: new Set(), dirtyMarkdownPaths: new Set(),
+    rebuildTask: null, rebuildTimer: null, snapshotRestoreTask: null, preRestoreListenerCleanup: null, preRestoreUncoveredChanges: false,
+    settings: { sidecarOpen: false },
+    app: { vault: { getMarkdownFiles: () => Array.from({ length: 6000 }) }, workspace: { getLeavesOfType: () => [] } },
+    startupDiagnostics: { mark() {} }, supportEvents: { record() {} },
+    hasVisibleKplexSurface: () => context.openKplexViews > 0,
+    startupGraphSeedPaths: () => [],
+    armStartupInitializationGuard() {}, registerOntologyContextMenu() {}, registerReactiveIndexListeners() {},
+    classifyPreRestoreChanges() {}, refreshBookmarkedEntryPoints: async () => {}, notifyIndexStatus() {},
+    pruneMissingDirtyMarkdownPaths() {}, scheduleRebuild: reason => calls.push(`schedule:${reason}`),
+    restorePersistedSidecar: async () => {}, releaseSidecar: async () => {}, register() {},
+    waitForMetadataCacheStability: () => { calls.push("metadata-wait"); return metadataStable; },
+    index: {
+      size: 0,
+      startBackgroundUrlIndex() {}, primePhysicalSearchCatalog: async () => {},
+      // `hydration` models a restored preview whose source-backed graph still hydrates; adoption follows it.
+      restorePersistedSnapshot: async () => ({ restored: Boolean(hydration), fresh: false }),
+      isOnDemandMode: () => false, hasPendingSnapshotHydration: () => Boolean(hydration) && !hydrated, hasIncrementalRestorePatch: () => false,
+      waitForSnapshotHydration: async () => { await hydration; hydrated = true; return { restored: true, fresh: true }; },
+      adoptStartupSources: async () => { builds.push("adopt-sources"); built = true; context.index.size = 1; return true; },
+      hasPhysicalBaseline: () => false, hasRestoredCheckpoint: () => false, hasSourceBackedStartup: () => Boolean(hydration),
+      isFullSnapshotHydrated: () => built, hasPendingStructuralMaintenance: () => false,
+      noteBuildDecision: kind => builds.push(kind),
+      rebuildProgressively: async () => { built = true; context.index.size = 1; return true; },
+      rebuild: async () => { built = true; context.index.size = 1; return true; },
+      cancelRebuild: () => calls.push("cancel"), cancelPendingPersistence() {},
+    },
+  };
+  for (const name of ["startOrDeferSessionIndex", "startSessionIndex", "joinDeferredSessionIndex", "initialBuildLostDemand", "scheduleIdleSessionIndex",
+    "runSessionIndexStartup", "finishStartupIndexPreparation", "ensureIndexReady", "ensureInitialIndex", "rebuildIndex", "performRebuild", "onKplexViewOpened", "onKplexViewClosed",
+    "adoptInitialSourceIndex", "allowsStartupSourceAdoption"]) {
+    const method = productionFunction("src/main.ts", name, dependencies);
+    context[name] = (...args) => method.call(context, ...args);
+  }
+  return context;
+}
+
+/** Let pending host callbacks and promise continuations run. */
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+for (const ios of [true, false]) {
+  test(`Given a deferred ${ios ? "iOS" : "Android"} start, when the last view closes while the initial index awaits metadata stability, then no build is admitted; reopening builds once`, async () => {
+    const stable = deferred();
+    const kplex = startupChain({ mobile: true, ios, metadataStable: stable.promise });
+    await kplex.startOrDeferSessionIndex();
+    const opening = kplex.onKplexViewOpened();
+    while (!kplex.calls.includes("metadata-wait")) await settle();
+    kplex.onKplexViewClosed();
+    stable.resolve();
+    await opening;
+    for (let turn = 0; turn < 5; turn += 1) await settle();
+    assert.deepEqual(kplex.builds, [], "no whole-vault build after the last view closed");
+    assert.equal(kplex.initialIndexComplete, false);
+    assert.equal(kplex.indexDirty, true, "the cold-start backlog stays for the next open");
+
+    await kplex.onKplexViewOpened();
+    assert.deepEqual(kplex.builds, ["cold-progressive"], "reopening builds once, progressively");
+    assert.equal(kplex.initialIndexComplete, true);
+  });
+}
+
+for (const ios of [true, false]) {
+  test(`Given a deferred ${ios ? "iOS" : "Android"} start with durable sources, when the last view closes while the snapshot hydrates, then no source adoption starts; reopening adopts once`, async () => {
+    const restore = deferred();
+    const kplex = startupChain({ mobile: true, ios, hydration: restore.promise });
+    await kplex.startOrDeferSessionIndex();
+    const opening = kplex.onKplexViewOpened();
+    for (let turn = 0; turn < 5; turn += 1) await settle();
+    kplex.onKplexViewClosed();
+    restore.resolve();
+    await opening;
+    for (let turn = 0; turn < 5; turn += 1) await settle();
+    assert.deepEqual(kplex.builds, [], "no whole-vault node catalog after the last view closed");
+    assert.equal(kplex.initialIndexComplete, false);
+    assert.equal(kplex.allowsStartupSourceAdoption(), false, "the index's own hydration is told to defer adoption too");
+
+    await kplex.onKplexViewOpened();
+    assert.deepEqual(kplex.builds, ["adopt-sources"], "reopening adopts the durable sources once");
+    assert.equal(kplex.allowsStartupSourceAdoption(), true);
+    assert.equal(kplex.initialIndexComplete, true);
+  });
+}
+
+test("Given desktop, when no view is open after the idle start, then the initial index still builds in the background", async () => {
+  const kplex = startupChain({ mobile: false });
   await kplex.startOrDeferSessionIndex();
+  assert.deepEqual(kplex.builds, [], "nothing builds before idle");
   kplex.window.becomeIdle();
   await kplex.sessionIndexStart;
-  assert.equal(kplex.deferredStartLostDemand(), false, "only mobile waits for a view");
+  await kplex.initialIndexTask;
+  assert.deepEqual(kplex.builds, ["cold-progressive"], "desktop builds at idle without a view, as before at layout-ready");
+  assert.equal(kplex.initialIndexComplete, true);
 });
 
 /** Production pre-restore fence with the real navigation remapper and recorded settings saves. */

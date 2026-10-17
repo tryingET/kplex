@@ -1483,3 +1483,35 @@ for (const mode of ['navigation','supersession','policy','missing-metadata','cor
     } finally {await browser.cleanup();}
   });
 }
+
+test("a demand-driven first start whose last view closed leaves the hydration's source adoption to the next open", async () => {
+  const browser = await chromiumHarness(bundle);
+  try {
+    assert.equal(await browser.evaluate(contributorBrowserInitialize), true);
+    assert.equal(await browser.evaluate(`(async()=>{
+      const M=sourceModules,f=await fixture('source-adoption-demand'),centerGateSettings=${centerGateSettings.toString()};
+      let index;
+      try{
+        f.add('A.md','Friends:: [[B]]');f.add('B.md','');f.app.vault.getName=()=>'source-adoption-demand';
+        f.app.vault.getAbstractFileByPath=path=>f.files.get(path)??(path==='/'||path===''?f.app.vault.getRoot():null);
+        await f.acquire();ok(await f.acquisition.reconcile(),'Persisted neutral sources without a graph snapshot');f.acquisition.close();
+        const semantic={hierarchy:{hidden:[],parents:[],children:[],leftFriends:['Friends'],rightFriends:[],previous:[],next:[]},
+          inferAllLinksAsFriends:false,inverseInfer:false,showFullTagName:true,tagStyleList:[],maxLabelLength:30,noteTypeField:'Type',primaryTagField:'Style'};
+        // The plugin's demand rule: no view since the deferred start began, until the test reopens.
+        let viewOpen=false,adoptions=0;
+        index=new M.GraphIndex({app:f.app,settings:{indexingMode:'eager',...semantic,...centerGateSettings({showFolderNodes:false}),lastActivePath:'A.md',pinnedNodes:[]},
+          getIndexSourceRevision:()=>0,allowsStartupSourceAdoption:()=>viewOpen},f.app);
+        index.scheduleOrphanCleanup=()=>{};
+        const adopt=index.adoptStartupSources.bind(index);index.adoptStartupSources=async()=>{adoptions++;return adopt()};
+        ok((await index.restorePersistedSnapshot(['A.md'])).restored,'The source-backed baseline restores');
+        if(index.hasPendingSnapshotHydration())await index.waitForSnapshotHydration();
+        equal(adoptions,0,'No whole-vault source adoption without a view');
+        equal(index.getSnapshotHydrationDiagnostics().route,'source-recovery','Hydration took the source-recovery route');
+        equal(index.getSnapshotHydrationDiagnostics().outcome,'cancelled','The hydration records the deferred adoption');
+        ok(index.hasSourceBackedStartup(),'Source-backed startup remains for the next open');
+        viewOpen=true;ok(await index.adoptStartupSources(),'The next open adopts the sources');equal(adoptions,1,'once');
+        return true;
+      }finally{index?.destroy();f.close()}
+    })()`), true);
+  } finally { await browser.cleanup(); }
+});

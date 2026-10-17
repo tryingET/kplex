@@ -522,12 +522,16 @@ export default class KplexPlugin extends Plugin {
   }
 
   /**
-   * Whether a deferred mobile start has lost its only reason to build: every K-Plex view closed
-   * while the start awaited restore or the search catalog. The initial index then waits for the
-   * next open instead of building a hidden whole-vault graph (desktop deferral builds at idle).
+   * Whether a demand-driven first build has lost its only reason to run: every K-Plex view closed
+   * while startup awaited restore, the search catalog, metadata stability or structural work. On
+   * iOS, closing the last view already cancels a running first build, and a deferred mobile start
+   * builds only for a view. Before the build starts there is nothing to cancel, so the initial
+   * index waits for the next open instead of building a hidden whole-vault graph. Desktop
+   * deferral still builds at idle, and Android still finishes a build that has started.
    */
-  private deferredStartLostDemand(): boolean {
-    return this.sessionIndexDeferred && Platform.isMobile && this.openKplexViews === 0 && !this.hasVisibleKplexSurface();
+  private initialBuildLostDemand(): boolean {
+    if (!Platform.isIosApp && !(this.sessionIndexDeferred && Platform.isMobile)) return false;
+    return !this.initialIndexComplete && this.openKplexViews === 0 && !this.hasVisibleKplexSurface();
   }
 
   /**
@@ -626,7 +630,7 @@ export default class KplexPlugin extends Plugin {
     const noteCount = this.app.vault.getMarkdownFiles().length;
     const largeIosExpensiveRebuild = !this.index.isOnDemandMode() && Platform.isIosApp && !restored.fresh && !this.index.hasPendingSnapshotHydration() &&
       (!restored.restored || !this.index.hasIncrementalRestorePatch()) && noteCount > 5000;
-    if (!largeIosExpensiveRebuild && !this.deferredStartLostDemand()) void this.finishStartupIndexPreparation();
+    if (!largeIosExpensiveRebuild && !this.initialBuildLostDemand()) void this.finishStartupIndexPreparation();
   }
 
   /**
@@ -1227,8 +1231,22 @@ export default class KplexPlugin extends Plugin {
     this.index.cancelPendingPersistence();
   }
 
-  /** Complete the initial source owner; an unsuccessful adoption reports incomplete coverage until a later attempt succeeds. */
+  /**
+   * Whether the index may adopt durable sources now. Adoption builds the whole-vault node catalog;
+   * a demand-driven first start whose last view closed leaves it to the next open, where
+   * `adoptInitialSourceIndex()` runs it. The index asks this before adopting during its own hydration.
+   */
+  allowsStartupSourceAdoption(): boolean {
+    return !this.initialBuildLostDemand();
+  }
+
+  /**
+   * Complete the initial source owner; an unsuccessful adoption reports incomplete coverage until a
+   * later attempt succeeds. Adoption builds the whole-vault node catalog, so a demand-driven first
+   * start whose last view closed meanwhile leaves it to the next open (`initialBuildLostDemand()`).
+   */
   private async adoptInitialSourceIndex(): Promise<void> {
+    if (this.initialBuildLostDemand()) return;
     this.initialSourceIndexIncomplete = false;
     const adopted = await this.index.adoptStartupSources();
     if (this.unloading) return;
@@ -1390,7 +1408,7 @@ export default class KplexPlugin extends Plugin {
   async ensureIndexReady(reason = "view-open"): Promise<void> {
     if (!this.layoutReady) return;
     await this.joinDeferredSessionIndex();
-    if (this.unloading || this.deferredStartLostDemand()) return;
+    if (this.unloading || this.initialBuildLostDemand()) return;
     await this.ensureInitialIndex();
     if (this.unloading) return;
     await this.rebuildIndex(false, this.index.size === 0, reason);
@@ -1539,8 +1557,8 @@ export default class KplexPlugin extends Plugin {
       }
       // Awaited patch/read work may have outlived the last visible Plex. Never turn that cancellation
       // into a hidden full-vault rebuild. Explicit user rebuilds and startup allowClosed work remain
-      // separate from this demand-driven guard.
-      if (!this.hasVisibleKplexSurface() && !allowClosed && !explicitlyRequested) {
+      // separate from this demand-driven guard, unless the startup itself was demand-driven.
+      if (!this.hasVisibleKplexSurface() && (!allowClosed || this.initialBuildLostDemand()) && !explicitlyRequested) {
         this.indexDirty = true;
         return;
       }

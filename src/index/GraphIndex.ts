@@ -1678,6 +1678,12 @@ export class GraphIndex {
       await this.refreshSemanticSettings();
       if (!current()) return false;
       this.setSnapshotHydrationPhase(run, "node-vocabulary");
+      // A demand-driven first start whose last view closed adopts at the next open instead; the
+      // source-backed baseline stays published and that open's adoption completes it.
+      if (this.plugin.allowsStartupSourceAdoption?.() === false) {
+        this.finishSnapshotHydrationDiagnostics(run, "cancelled");
+        return true;
+      }
       if (!(await this.adoptStartupSources()) || !current()) return false;
       this.finishSnapshotHydrationDiagnostics(run, "complete");
       return true;
