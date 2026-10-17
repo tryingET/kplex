@@ -13,6 +13,7 @@ import { webcrypto } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { contributorBrowserBundle } from './support/contributorBrowserFixture.mjs';
+import { urlPublicationFixture } from './support/urlPublicationFixture.mjs';
 
 const bundle = await contributorBrowserBundle(['src/index/GraphIndex.ts', 'src/index/IndexSnapshot.ts',
   'src/adapters/obsidian/excludedFiles.ts', 'src/adapters/obsidian/ontologySourceCollector.ts', 'src/index/IndexedDbCache.ts']);
@@ -22,6 +23,12 @@ function userIgnore(filters) {
   const compiled = filters.map(filter => filter.length > 2 && filter.startsWith('/') && filter.endsWith('/')
     ? new RegExp(filter.slice(1, -1), 'i') : new RegExp('^' + filter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
   return path => compiled.some(filter => filter.test(path));
+}
+
+/** Change Obsidian's excluded-files list as updateUserIgnoreFilters does: the filter and its JSON text. */
+function setFilters(metadataCache, filters) {
+  metadataCache.isUserIgnored = userIgnore(filters);
+  metadataCache.userIgnoreFiltersString = JSON.stringify(filters);
 }
 
 /**
@@ -47,7 +54,7 @@ function fixture(filters = ['Archive/', 'Notes/Secret.md']) {
   const old = file('Archive/Old.md', archive), deep = file('Archive/Deep/Image.png', nested);
   const tags = new Map([['Notes/A.md', ['#kept']], ['Archive/Old.md', ['#archived']], ['Notes/Secret.md', ['#secret']]]);
   const events = { on: () => ({}), offref() {} };
-  const metadataCache = { ...events, isUserIgnored: userIgnore(filters),
+  const metadataCache = { ...events, isUserIgnored: userIgnore(filters), userIgnoreFiltersString: JSON.stringify(filters),
     getFileCache: f => ({ frontmatter: {}, hostTags: tags.get(f.path) ?? [] }),
     getFirstLinkpathDest: (link) => files.get(link) ?? files.get(`${link}.md`) ?? null,
     resolvedLinks: { 'Notes/A.md': { 'Notes/B.md': 1, 'Archive/Old.md': 1, 'Notes/Secret.md': 1 }, 'Archive/Old.md': { 'Notes/A.md': 1 }, 'Notes/B.md': {} },
@@ -248,11 +255,14 @@ test('Given an excluded note in the editor, when K-Plex decides whether to follo
 test('Given an excluded last center or history entry, when startup seeds the Plex, then only included notes are seeds', () => {
   const { host, deps, a, old } = listenerHost();
   Object.assign(host, {
-    settings: { lastActivePath: old.path, navigationHistory: ['Notes/B.md', 'Archive/Old.md', 'Notes/Secret.md'], pinnedNodes: ['Notes/Secret.md', 'folder:Notes'] },
+    settings: { lastActivePath: 'folder:Archive', navigationHistory: ['Notes/B.md', 'Archive/Old.md', 'Notes/Secret.md', 'folder:Archive/Deep'],
+      pinnedNodes: ['Notes/Secret.md', old.path, 'folder:Notes', '#archived', 'Archive/Missing'] },
     findRecentDocumentLeaf: () => null, fileForLeaf: () => null,
   });
   host.app.workspace = { getActiveFile: () => a };
-  assert.deepEqual(productionMethod('startupGraphSeedPaths', deps).call(host), ['Notes/A.md', 'Notes/B.md', 'folder:Notes']);
+  assert.deepEqual(productionMethod('startupGraphSeedPaths', { ...deps, isExcludedNodePath: fixture().M.isExcludedNodePath }).call(host),
+    ['Notes/A.md', 'Notes/B.md', 'folder:Notes', '#archived', 'Archive/Missing'],
+    'excluded notes and folder nodes are no seeds; tags and unresolved names are not vault files');
 });
 
 test('Given web-link owners persisted for notes that are excluded now, when the cache is restored, then they are dropped', async () => {
@@ -294,10 +304,56 @@ test('Given a source whose link target becomes excluded, when its environment is
   const cache = { frontmatter: {} };
   const excluded = JSON.parse(acquisition.environment(cache, 'Notes/A.md'));
   assert.deepEqual(excluded.excluded, ['Archive/Old.md', 'Notes/Secret.md'], 'the excluded targets of this source are part of its environment');
-  metadataCache.isUserIgnored = userIgnore([]);
-  const included = acquisition.environment(cache, 'Notes/A.md');
-  assert.equal('excluded' in JSON.parse(included), false, 'without excluded targets the environment keeps its previous shape');
-  assert.notEqual(JSON.stringify(excluded), included, 'changing the list changes the observation, so the head is re-resolved');
+  setFilters(metadataCache, []);
+  const included = JSON.parse(acquisition.environment(cache, 'Notes/A.md'));
+  assert.equal('excluded' in included || 'excludedFiles' in included, false, 'without a list the environment keeps its previous shape');
+  assert.notDeepEqual(excluded, included, 'changing the list changes the observation, so the head is re-resolved');
+});
+
+test('Given a source whose references resolve outside resolvedLinks, when the excluded-files list changes, then its environment changes', () => {
+  const { M, app, metadataCache } = fixture(['Archive/']);
+  const acquisition = new M.ObsidianSourceAcquisition(app, new M.KplexIndexedDbCache(app.vault), async () => ({ urls: [], inlineFields: {}, inlineFieldOccurrences: [] }));
+  // Notes/B.md has no resolved links; a plain-text ontology value or a date property is resolved by name.
+  const cache = { frontmatter: { parent: 'Secret' } };
+  const before = acquisition.environment(cache, 'Notes/B.md');
+  setFilters(metadataCache, ['Archive/', 'Notes/Secret.md']);
+  const after = acquisition.environment(cache, 'Notes/B.md');
+  assert.notEqual(after, before, 'a list change re-resolves the head, also when no resolved link changed');
+  assert.equal(JSON.parse(after).excludedFiles, JSON.stringify(['Archive/', 'Notes/Secret.md']));
+});
+
+test('Given a web-link scan that is reading a note, when the note joins the excluded files, then it never publishes or persists', async () => {
+  const f = urlPublicationFixture(bundle);
+  const { app } = f.index;
+  f.add('Archive/Old.md'); f.add('Notes/B.md');
+  let release, excluded = false;
+  const held = new Promise(resolve => { release = resolve; });
+  const text = path => `See https://example.com/${path === 'Archive/Old.md' ? 'old' : 'b'}`;
+  /** Hold the body read of Archive/Old.md until the test releases it; serve B at once. */
+  const read = path => path === 'Archive/Old.md' ? held.then(() => text(path)) : Promise.resolve(text(path));
+  app.vault.cachedRead = file => read(file.path);
+  app.vault.adapter = { read };
+  app.metadataCache.isUserIgnored = path => excluded && path.startsWith('Archive/');
+  const stored = [];
+  Object.assign(f.index.indexedDb, { deleteUrlOwner: async () => true,
+    putUrlOwners: async records => { stored.push(...records.map(record => record.path)); return true; } });
+  const hostTurn = () => new Promise(resolve => setTimeout(resolve, 0));
+  try {
+    const scan = Promise.all(['Archive/Old.md', 'Notes/B.md'].map(path => f.index.refreshUrlOwner(path, false)));
+    for (let turn = 0; turn < 200 && !f.index.urlOwners.has('Notes/B.md'); turn++) await hostTurn();
+    assert.equal(f.index.urlOwners.has('Notes/B.md'), true, 'control: an included note publishes its web links');
+    assert(f.index.urlOwnerTasks.has('Archive/Old.md'), 'the read of Archive/Old.md is still in flight');
+    excluded = true;
+    const retired = f.index.retireExcludedUrlOwners();
+    release();
+    await Promise.all([scan, retired]);
+    for (let turn = 0; turn < 200 && f.index.urlOwnerTasks.size; turn++) await hostTurn();
+    assert.equal(f.index.urlOwners.has('Archive/Old.md'), false, 'the excluded note has no web-link owner');
+    assert.deepEqual(stored, ['Notes/B.md'], 'only the included owner is persisted');
+    const urls = JSON.stringify([...f.index.urlState.pages.keys()]);
+    assert(urls.includes('example.com/b'), 'control: the included URL is published');
+    assert.equal(urls.includes('example.com/old'), false, 'the excluded note\'s URL is not published');
+  } finally { f.close(); }
 });
 
 test('Given web-link owners for notes that are excluded now, when the list change is applied, then those owners are retired', async () => {

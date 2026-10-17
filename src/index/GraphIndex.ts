@@ -944,7 +944,7 @@ export class GraphIndex {
             // Newly parsed center-only declarations can discover physical targets absent from the
             // host aggregate map. They remain direct owners, never recursive neighbor expansion.
             const direct = [...(this.state.pages.get(centerPath)?.neighbours.keys() ?? [])]
-              .filter(target => this.app.vault.getFileByPath(target)?.extension === "md");
+              .filter(target => this.app.vault.getFileByPath(target)?.extension === "md" && !isExcludedFile(this.app.metadataCache, target));
             candidates.splice(1, candidates.length - 1, ...[...new Set([...direct, ...candidates.slice(1)])].slice(0, 63));
             await this.publishOnDemandHostScope(centerPath, current);
           }
@@ -3898,7 +3898,8 @@ export class GraphIndex {
     restore?: UrlRestoreLifetime): Promise<void> {
     const revision = { ...captureFileRevision(file), path: file.path };
     const alive = (): boolean => !this.diagnosticsClosed && !this.persistentCachePurged && (!restore || restore.isCurrent()) && fileRevisionMatches(file, revision)
-      && this.app.vault.getFileByPath(revision.path) === file && event === (this.urlOwnerEvents.get(revision.path) ?? 0);
+      && this.app.vault.getFileByPath(revision.path) === file && event === (this.urlOwnerEvents.get(revision.path) ?? 0)
+      && !isExcludedFile(this.app.metadataCache, revision.path);
     this.urlPendingPublications++;
     const priority = background ? INDEX_WORK_PRIORITY.urlInventory : INDEX_WORK_PRIORITY.visibleNeighborhood;
     let completedSliceCover = 0;
@@ -4224,9 +4225,11 @@ export class GraphIndex {
     const file = this.app.vault.getFileByPath(path), event = this.urlOwnerEvents.get(path) ?? 0;
     if (!file || file.extension !== "md" || isExcludedFile(this.app.metadataCache, path)) { this.foregroundUrlOwners.delete(path); return this.retireUrlOwner(path); }
     const revision = captureFileRevision(file);
+    // A note that joins the excluded files while its body is read or parsed never publishes; the
+    // retry below then retires it.
     const current = (): boolean => !this.diagnosticsClosed && !this.persistentCachePurged
       && fileRevisionMatches(file, revision) && this.app.vault.getFileByPath(path) === file
-      && event === (this.urlOwnerEvents.get(path) ?? 0);
+      && event === (this.urlOwnerEvents.get(path) ?? 0) && !isExcludedFile(this.app.metadataCache, path);
     const task = this.withUrlReadBudget(file, async () => {
       try {
         if (!current()) return;
@@ -4268,21 +4271,23 @@ export class GraphIndex {
   }
 
   /**
-   * Remove deleted/renamed URL incidence canonically, retaining shared targets and origin lifetimes.
-   * Its synchronous commit may consume a bounded private delta, never a displayed generation.
-   */
-  /**
    * Retire web-link owners of notes that are on Obsidian's excluded-files list now, for example after
-   * the list changed in this session. Runs at the start of every graph rebuild; each owner goes
-   * through the normal refresh, which retires its evidence and deletes its persisted record.
+   * the list changed in this session, including acquisitions still in flight. Runs at the start of
+   * every graph rebuild; each owner goes through the normal refresh, which retires its evidence and
+   * deletes its persisted record.
    *
    * @returns once every affected owner is retired
    */
   async retireExcludedUrlOwners(): Promise<void> {
-    const excluded = [...this.urlOwners.keys()].filter((path) => isExcludedFile(this.app.metadataCache, path));
+    const excluded = [...new Set([...this.urlOwners.keys(), ...this.urlOwnerTasks.keys()])]
+      .filter((path) => isExcludedFile(this.app.metadataCache, path));
     await Promise.all(excluded.map((path) => this.refreshUrlOwner(path)));
   }
 
+  /**
+   * Remove deleted/renamed URL incidence canonically, retaining shared targets and origin lifetimes.
+   * Its synchronous commit may consume a bounded private delta, never a displayed generation.
+   */
   private retireUrlOwner(path: string): Promise<void> {
     this.urlPendingPublications++;
     const task = this.urlPublicationLane.catch(() => {}).then(() => this.workScheduler.run(INDEX_WORK_PRIORITY.visibleNeighborhood, async () => {

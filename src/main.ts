@@ -99,7 +99,7 @@ import { PartialRelatedFileError } from "./adapters/obsidian/relatedFileOutcome"
 import { capturePlaceholderRelocation, applyPlaceholderRelocation, assertPlaceholderRelocationTarget, placeholderReference, type PlaceholderRelocation } from "./adapters/obsidian/placeholderRelocation";
 import { ActionManager, type ActionContext, type ActionImplementations, type SidecarFoldRoute, type SidecarFoldTarget } from "./application/ActionManager";
 import { frontmatterDeclarationKey } from "./application/frontmatterUnlink";
-import { indexedMarkdownFiles, isExcludedFile, isExcludedFolder } from "./adapters/obsidian/excludedFiles";
+import { indexedMarkdownFiles, isExcludedFile, isExcludedFolder, isExcludedNodePath } from "./adapters/obsidian/excludedFiles";
 import { ACTION_BY_ID, ACTION_RELATION_ROLES, type ActionId, type ActionOutcome, type ActionRequest, type Availability } from "./core/plex/actions";
 import { compileActionBindings, migrateActionPreferences, sanitizeActionPreferences, type ActionPreferencesV1 } from "./core/plex/actionPreferences";
 import { createActionCommandPublisher, type ActionCommandPublisher } from "./adapters/obsidian/actionCommands";
@@ -567,8 +567,8 @@ export default class KplexPlugin extends Plugin {
     // for the complete snapshot before discovering a usable fallback.
     paths.push(...this.settings.navigationHistory.slice(-12).reverse());
     paths.push(...this.settings.pinnedNodes);
-    // Obsidian's excluded files are not part of the Plex and never seed a center.
-    return [...new Set(paths.filter((path) => path && !this.isExcludedVaultPath(path, false)))];
+    // Obsidian's excluded files and folders are not part of the Plex and never seed a center.
+    return [...new Set(paths.filter((path) => path && !isExcludedNodePath(this.app, path)))];
   }
 
   /** Keep the requested center through partial startup; only completed indexing proves its absence.

@@ -417,6 +417,16 @@ test("folder previews leave out Obsidian's excluded files and folders from membe
   } finally { f.preview.dispose(); }
 });
 
+test("an excluded folder or note is never a preview center", async () => {
+  const f = folderFixture({ isUserIgnored: path => path === "Notes/Secret.md" || path.startsWith("Notes/Archive/") });
+  f.addFolder("Notes/Archive"); f.addFile("Notes/Secret.md"); f.addFile("Notes/Note.md");
+  try {
+    assert.equal(await f.preview.build("folder:Notes/Archive"), null, "no preview for an excluded folder center");
+    assert.equal(await f.preview.build("Notes/Secret.md"), null, "no preview for an excluded note center");
+    assert(await f.preview.build("folder:Notes"), "an included folder keeps its preview");
+  } finally { f.preview.dispose(); }
+});
+
 test("empty folder membership proves zeros without claiming complete semantic incidence", async () => {
   const f = folderFixture();
   try {
@@ -614,6 +624,21 @@ test("host preview leaves out Obsidian's excluded files as link targets, backlin
   }
   assert.equal(center.neighbours.get("Notes/Child.md")?.isChild, true, "included ontology targets keep their role");
   assert.equal([...result.state.pages.keys()].some(path => path === "Parent" || path.endsWith("/Parent")), false, "no placeholder replaces the excluded ontology target");
+  f.preview.dispose();
+});
+
+test("on-demand candidates leave out Obsidian's excluded files before the owner cap", async () => {
+  const f = fixture();
+  const excluded = new Set(["Notes/Ordinary.md", "Notes/Backlink.md", "Notes/Parent.md"]);
+  f.app.metadataCache.isUserIgnored = path => excluded.has(path);
+  const candidates = await f.preview.candidateMarkdownPaths(f.centerPath, 64);
+  assert.equal(candidates[0], f.centerPath);
+  for (const path of excluded) assert.equal(candidates.includes(path), false, `${path} is no candidate`);
+  assert(candidates.includes("Notes/Child.md"), "included link targets stay candidates");
+  assert.deepEqual(await f.preview.candidateMarkdownPaths("Notes/Backlink.md", 64), [], "an excluded center has no candidates");
+  const capped = await f.preview.candidateMarkdownPaths(f.centerPath, 2);
+  assert.equal(capped.some(path => excluded.has(path)), false, "excluded files do not use up the cap");
+  assert.equal(capped.length, 2);
   f.preview.dispose();
 });
 

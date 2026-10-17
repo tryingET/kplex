@@ -32,7 +32,7 @@ import { createGraphState, type GraphState } from "./GraphState";
 import { extractLinksFromValue, iterateFrontmatterAliasSteps, mergeFileMetadata, normalizeFieldName, type ParsedBodyMetadata } from "./fieldParser";
 import { cachedCenterTargetVisibility, captureCachedCenterGateSettings, projectCachedCenterGates,
   type CachedCenterGates } from "./CachedCenterGateProjection";
-import { isExcludedFile, isExcludedFolder } from "../adapters/obsidian/excludedFiles";
+import { isExcludedFile, isExcludedFolder, isExcludedNodePath } from "../adapters/obsidian/excludedFiles";
 
 const MAX_PREVIEW_SOURCES = 64;
 const MAX_PREVIEW_TARGETS = 256;
@@ -144,18 +144,19 @@ export class HostMetadataPreview {
   }
 
   /** Select current direct Markdown owners, center first, without body reads or recursive expansion.
-   * The owner cap bounds semantic acquisition only; callers count the complete native baseline. */
+   * The owner cap bounds semantic acquisition only; callers count the complete native baseline.
+   * Obsidian's excluded files are never owners, and an excluded center has none. */
   async candidateMarkdownPaths(centerPath: string, limit = 64): Promise<readonly string[]> {
     await this.initializeBacklinks();
-    if (this.disposed || !this.runtime.isCurrent()) return [];
+    if (this.disposed || !this.runtime.isCurrent() || isExcludedNodePath(this.app, centerPath)) return [];
     const paths: string[] = [];
     const seen = new Set<string>();
     const cap = Math.min(64, Math.max(1, Math.floor(limit)));
-    /** Admit exact live Markdown files in priority order, never synthetic or attachment owners. */
+    /** Admit exact live Markdown files in priority order, never synthetic, attachment or excluded owners. */
     const add = (path: string): void => {
       if (seen.has(path) || paths.length >= cap) return;
       const file = this.app.vault.getFileByPath(path);
-      if (!file || file.extension !== "md") return;
+      if (!file || file.extension !== "md" || isExcludedFile(this.app.metadataCache, path)) return;
       seen.add(path);
       paths.push(path);
     };
@@ -409,6 +410,8 @@ export class HostMetadataPreview {
     onUnavailable?: () => void;
   }> = {}): Promise<HostMetadataPreviewResult | null> {
     if (this.disposed || !this.runtime.isCurrent()) return null;
+    // Obsidian's excluded files and folders are not part of the Plex, so they are never a center.
+    if (isExcludedNodePath(this.app, centerPath)) return null;
     if (this.hasTag(centerPath)) return this.buildTag(centerPath, options.checkpoint);
     // Folder identity is interpreted only at this host boundary. No backlink catalog or note
     // metadata is needed to expose the native direct tree during blocked durable startup.

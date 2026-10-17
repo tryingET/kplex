@@ -72,7 +72,7 @@ import { createObsidianMetadataSourceHost, normalizedBodyUrl, ObsidianMetadataSo
 import { entityFactForFile, entityFactForFolder, ObsidianStructuralPatchSourceCollector,
   structuralMarkdownSourceOrder, tagRef } from "./structuralSourceCollector";
 import { hostLinkRecord } from "./hostLinkSourceCollector";
-import { indexedMarkdownFiles, isExcludedFile } from "./excludedFiles";
+import { excludedFilesListKey, indexedMarkdownFiles, isExcludedFile } from "./excludedFiles";
 import { resolveObsidianReferenceTarget } from "./ontologySourceCollector";
 
 type FileObservation = { identity: string | null; observation?: SourceObservation; validatedHostRevision?: number; revision: number; dirty: boolean; bodyDirty: boolean; resolutionDirty: boolean; path: string; oldPath?: string; created: boolean; impact: Promise<void> | null };
@@ -1018,10 +1018,13 @@ export class ObsidianSourceAcquisition {
       && file.stat.mtime === physical.mtime && file.stat.size === physical.size && file.stat.ctime === physical.ctime;
   }
   /**
-   * Hash only Date-registry observations, Daily Notes interpretation configuration and which of this
-   * source's resolved link targets are on Obsidian's excluded-files list, not K-Plex settings. A
-   * target joining or leaving the list therefore invalidates a persisted head for re-resolution. The
-   * `excluded` key appears only when non-empty, so heads without excluded targets keep their digest.
+   * Hash only Date-registry observations, Daily Notes interpretation configuration, Obsidian's
+   * excluded-files list and which of this source's resolved link targets are on it, not K-Plex
+   * settings. Like the Daily Notes settings, the list changes without a vault event, and ontology
+   * and date references resolve against it also outside `resolvedLinks`; a list change therefore
+   * re-resolves every persisted head once, and a target joining or leaving the list re-resolves the
+   * sources linking to it. Both keys appear only when non-empty, so heads made without a list keep
+   * their digest.
    *
    * @param cache - the source's current metadata
    * @param path - the source's vault path
@@ -1030,9 +1033,10 @@ export class ObsidianSourceAcquisition {
   private environment(cache: CachedMetadata, path: string): string {
     const excluded = Object.keys(this.app.metadataCache.resolvedLinks[path] ?? {})
       .filter((target) => isExcludedFile(this.app.metadataCache, target)).sort();
+    const excludedFiles = excludedFilesListKey(this.app.metadataCache);
     return JSON.stringify({ daily: this.metadataHost.dailyNotesSettings(), dates: Object.keys(cache.frontmatter ?? {})
       .filter((name) => name !== "position" && this.metadataHost.isDateProperty(name)).sort(),
-    ...(excluded.length ? { excluded } : {}) });
+    ...(excludedFiles ? { excludedFiles } : {}), ...(excluded.length ? { excluded } : {}) });
   }
   /**
    * Capture host inputs not represented by neutral source facts. Current-session memory/disk replay
