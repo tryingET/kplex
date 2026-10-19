@@ -3659,9 +3659,11 @@ export class GraphIndex {
         }
         if (group.length) readGroups.push(group);
 
-        for (const readGroup of readGroups) {
+        for (const group of readGroups) {
           await this.workScheduler.checkpoint(INDEX_WORK_PRIORITY.background);
           if (!current()) return false;
+          // A note that joined Obsidian's excluded files since the inventory is not read, parsed or cached.
+          const readGroup = group.filter(file => !isExcludedFile(this.app.metadataCache, file.path));
           // Parallelize only native file reads. Parsing remains sequential and low-memory on iOS.
           const contents = await Promise.all(readGroup.map(async (file) => ({
             file,
@@ -3670,7 +3672,7 @@ export class GraphIndex {
           })));
           if (!current()) return false;
           for (const { file, revision, content } of contents) {
-            if (!fileRevisionMatches(file, revision)) continue;
+            if (!fileRevisionMatches(file, revision) || isExcludedFile(this.app.metadataCache, file.path)) continue;
             let body: ParsedBodyMetadata;
             try {
               await this.workScheduler.checkpoint(INDEX_WORK_PRIORITY.background);
@@ -3681,7 +3683,7 @@ export class GraphIndex {
               throw error;
             }
             if (!current()) return false;
-            if (!fileRevisionMatches(file, revision)) continue;
+            if (!fileRevisionMatches(file, revision) || isExcludedFile(this.app.metadataCache, file.path)) continue;
             pendingWrites.push({ path: file.path, mtime: revision.mtime, body });
             if (onBody) await onBody(file, body);
             if (!current()) return false;
@@ -6879,6 +6881,10 @@ export class GraphIndex {
    * relation-map keys; do not schedule a whole-vault rebuild or reread Markdown.
    */
   renameFile(oldPath: string, file: TFile): boolean {
+    // Folder remaps (retained scopes and the canonical pass) reach every descendant here. One that
+    // moved into Obsidian's excluded files is left to the structural refresh its boundary rename
+    // schedules; it is never remapped to its new path.
+    if (isExcludedFile(this.app.metadataCache, file.path)) return false;
     return this.renameTreeEndpoint(oldPath, file);
   }
 
@@ -7272,7 +7278,6 @@ export class GraphIndex {
       for (const { page, file } of files) {
         if (this.diagnosticsClosed) return;
         if (this.state.pages.get(page.path) !== page) continue;
-        if (this.app.vault.getFileByPath(file.path) === file && isExcludedFile(this.app.metadataCache, file.path)) continue;
         if (this.app.vault.getFileByPath(file.path) === file) this.renameFile(page.path, file);
         else this.dematerializeFile(page.path);
         await pause();
@@ -7585,6 +7590,9 @@ export class GraphIndex {
    * coherent preview incidence. Publish even if those read maps shared the newly bound canonical page.
    */
   insertCreatedFile(file: TFile, aliases: readonly string[] = [], materializedReads = false): GraphPage {
+    // A K-Plex action can create a note on Obsidian's excluded-files list. It gets a detached page to
+    // reference or open; the graph, Find and previews leave it out.
+    if (isExcludedFile(this.app.metadataCache, file.path)) return { ...this.hostFileSearchPage(file), aliases: [...aliases] };
     if (!materializedReads) this.updateHostFileAvailability(file.path, file);
     // A prepared scope can already contain this file before the physical event is patched. The
     // canonical patch baseline must still own its endpoint; never promote only the private view.

@@ -44,7 +44,7 @@ import { nodeId, type NodeId } from "../core/graph/model";
 import { entityFactForFile, ObsidianStructuralPatchSourceCollector, ObsidianStructuralSourceCollector } from "../adapters/obsidian/structuralSourceCollector";
 import { ObsidianHostLinkSourceCollector, readHostLinkSignatureEntries } from "../adapters/obsidian/hostLinkSourceCollector";
 import { ObsidianReferenceSourceCollector } from "../adapters/obsidian/ontologySourceCollector";
-import { indexedMarkdownFiles } from "../adapters/obsidian/excludedFiles";
+import { indexedMarkdownFiles, isExcludedFile } from "../adapters/obsidian/excludedFiles";
 import {
   createObsidianMetadataSourceHost,
   normalizedBodyUrl,
@@ -1148,11 +1148,13 @@ export class GraphBuilder {
       sourceRevision: this.sourceAcquisition?.getFileRevision(file) };
   }
 
-  /** Equal-stat host edits still invalidate an awaited private build; published state stays untouched. */
+  /** Equal-stat host edits, and a file joining Obsidian's excluded files, still invalidate an
+   * awaited private build; published state stays untouched and the backlog retries without it. */
   private fileRevisionMatches(file: TFile, revision: FileRevision): boolean {
     return file.path === revision.path && file.stat.mtime === revision.mtime && file.stat.size === revision.size &&
       this.app.vault.getFileByPath(revision.path) === file
-      && this.sourceAcquisition?.getFileRevision(file) === revision.sourceRevision;
+      && this.sourceAcquisition?.getFileRevision(file) === revision.sourceRevision
+      && !isExcludedFile(this.app.metadataCache, revision.path);
   }
 
   private createPage(params: Partial<GraphPage> & Pick<GraphPage, "path" | "name">): GraphPage {
@@ -1397,7 +1399,7 @@ export class GraphBuilder {
       const fresh = new Map<string, ParsedBodyMetadata>();
       const needsRead = misses.filter((file) => !durable.has(file.path));
       for (const group of readGroups(needsRead)) {
-        if (!this.isCurrent()) return false;
+        if (!this.isCurrent() || group.some(file => isExcludedFile(this.app.metadataCache, file.path))) return false;
         const contents = await Promise.all(group.map(async (file) => ({
           file,
           revision: revisions.get(file)!,

@@ -15,7 +15,7 @@ import ts from 'typescript';
 import { contributorBrowserBundle } from './support/contributorBrowserFixture.mjs';
 import { urlPublicationFixture } from './support/urlPublicationFixture.mjs';
 
-const bundle = await contributorBrowserBundle(['src/index/GraphIndex.ts', 'src/index/IndexSnapshot.ts',
+const bundle = await contributorBrowserBundle(['src/index/GraphIndex.ts', 'src/index/GraphState.ts', 'src/index/IndexSnapshot.ts',
   'src/adapters/obsidian/excludedFiles.ts', 'src/adapters/obsidian/ontologySourceCollector.ts', 'src/index/IndexedDbCache.ts']);
 
 /** Obsidian's MetadataCache.updateUserIgnoreFilters/isUserIgnored, reduced to its compiled form. */
@@ -415,4 +415,82 @@ test('Given a folder rename whose descendant moves into the exclusion, when the 
     assert.equal([...(index.hostPreview.tagMembers.get('tag:secret') ?? [])].includes('Docs/Secret.md'), false, 'nor into its tag');
     assert(index.physicalSearchEntries.has('Docs/A.md'), 'control: included descendants move to their new path');
   } finally { index.destroy(); }
+});
+
+/** Fixture GraphIndex with the on-demand settings used throughout this file. */
+function excludedIndex(M, app) {
+  const settings = { indexingMode: 'on-demand', hierarchy: { hidden: [], parents: [], children: [], leftFriends: [], rightFriends: [], previous: [], next: [], exclusions: [] },
+    inferAllLinksAsFriends: false, inverseInfer: false, showFullTagName: true, tagStyleList: [], baseNodeStyle: { maxLabelLength: 30 }, maxItemCount: 30,
+    pinnedNodes: [], excludeFilepaths: [], nameFields: '', noteTypeField: 'Type', primaryTagField: 'Style' };
+  return new M.GraphIndex({ app, settings, getIndexSourceRevision: () => 0 }, app);
+}
+
+test('Given a K-Plex action that creates an excluded note, when the index materializes it, then the caller gets a detached page and the Plex leaves it out', () => {
+  const { M, app, files, secret, a } = fixture();
+  const index = excludedIndex(M, app);
+  try {
+    const page = index.insertCreatedFile(secret, ['Hidden']);
+    assert.equal(JSON.stringify([page.path, page.file === secret, page.aliases]), JSON.stringify(['Notes/Secret.md', true, ['Hidden']]), 'the caller can reference or open it');
+    assert.equal(index.state.pages.has('Notes/Secret.md'), false, 'no graph page');
+    assert.equal(index.getVaultSearchPage('Notes/Secret.md'), undefined, 'no Find result');
+    assert.equal(index.state.pages.has('folder:Notes'), false, 'no ancestry is materialized for it');
+    assert.equal(index.insertCreatedFile(a).path, 'Notes/A.md');
+    assert(index.state.pages.has('Notes/A.md') && files.get('Notes/A.md') === a, 'control: an included note is materialized');
+  } finally { index.destroy(); }
+});
+
+test('Given a retained view of a renamed folder, when its prepass remaps the views, then a descendant that moved into the exclusion is not remapped', async () => {
+  const { M, app, advance, files } = fixture(['Archive/', 'Docs/Secret.md']);
+  const notes = files.get('Notes/A.md').parent, members = ['Notes/A.md', 'Notes/B.md', 'Notes/Secret.md'].map(path => files.get(path));
+  const index = excludedIndex(M, app);
+  /** Drive virtual timers until the promise settles. */
+  const settled = async promise => { let done = false, failure; promise.then(() => { done = true; }, error => { failure = error; done = true; });
+    for (let i = 0; i < 400 && !done; i++) await advance(20); assert(done, 'settles'); if (failure) throw failure; };
+  try {
+    for (const file of members) index.insertCreatedFile(file);
+    // An on-demand view of Notes/A.md retains its neighbours, the soon-excluded note among them.
+    const view = M.createGraphState();
+    for (const file of members) view.pages.set(file.path, index.state.pages.get(file.path));
+    index.onDemandHostScopes.set('Notes/A.md', view);
+    notes.path = 'Docs'; notes.name = 'Docs';
+    for (const file of members) { files.delete(file.path); file.path = `Docs/${file.name}`; files.set(file.path, file); }
+    const folderAt = app.vault.getFolderByPath;
+    app.vault.getFolderByPath = path => path === 'Docs' ? notes : path === 'Notes' ? null : folderAt(path);
+    const remap = index.renameFolder('Notes', notes);
+    index.updateHostFileAvailability('Notes/Secret.md');
+    index.updateHostFileAvailability('Docs/Secret.md');
+    await settled(remap);
+    assert.equal(index.state.pages.get('Docs/Secret.md')?.file === members[2], false, 'the excluded descendant is not remapped into the graph');
+    assert.equal(index.getVaultSearchPage('Docs/Secret.md'), undefined, 'nor into Find');
+    assert.equal(index.state.pages.get('Docs/A.md')?.file, members[0], 'control: included descendants move');
+  } finally { index.destroy(); }
+});
+
+test('Given a prewarm or full build waiting on the body cache, when a note joins the excluded files, then it is not read, parsed or cached', async () => {
+  for (const pass of ['prewarm', 'rebuild']) {
+    const { M, app, metadataCache, advance, reads } = fixture();
+    const index = excludedIndex(M, app);
+    index.plugin.settings.indexingMode = 'eager';
+    const parsed = [], cached = [];
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    app.vault.read = async file => { reads.push(file.path); return `Body of ${file.path}`; };
+    const parse = index.metadataParser.parse.bind(index.metadataParser);
+    index.metadataParser.parse = (text, ...rest) => { parsed.push(text); return parse(text, ...rest); };
+    Object.assign(index.indexedDb, { bodyStoreReady: async () => true, getBodies: async () => { await held; return new Map(); },
+      putBodies: async records => { cached.push(...records.map(record => record.path)); return true; },
+      putBody: async path => { cached.push(path); return true; }, open: async () => null });
+    try {
+      let done = false;
+      (pass === 'prewarm' ? index.prewarmBodyCache(() => true) : index.rebuild()).then(() => { done = true; }, () => { done = true; });
+      for (let i = 0; i < 50 && !done; i++) await advance(20);
+      setFilters(metadataCache, ['Archive/', 'Notes/Secret.md', 'Notes/B.md']);
+      release();
+      for (let i = 0; i < 400 && !done; i++) await advance(20);
+      assert(done, `${pass} settles`);
+      assert.equal(reads.includes('Notes/B.md'), false, `${pass}: the newly excluded note is not read`);
+      assert.equal(parsed.some(text => text.includes('Notes/B.md')), false, `${pass}: nor parsed`);
+      assert.equal(cached.includes('Notes/B.md'), false, `${pass}: nor cached`);
+    } finally { index.destroy(); }
+  }
 });
