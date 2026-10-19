@@ -3603,8 +3603,9 @@ export class GraphIndex {
 
       const flush = async (): Promise<boolean> => {
         if (!pendingWrites.length) return current();
-        const batch = pendingWrites.splice(0, pendingWrites.length);
-        return (await this.indexedDb.putBodies(batch)) && current();
+        // A queued body whose note has joined Obsidian's excluded files since it was parsed is dropped.
+        const batch = pendingWrites.splice(0, pendingWrites.length).filter(record => !isExcludedFile(this.app.metadataCache, record.path));
+        return (!batch.length || await this.indexedDb.putBodies(batch)) && current();
       };
 
       for (let batchStart = 0; batchStart < files.length; batchStart += lookupBatchSize) {
@@ -3677,6 +3678,8 @@ export class GraphIndex {
             try {
               await this.workScheduler.checkpoint(INDEX_WORK_PRIORITY.background);
               if (!current()) return false;
+              // The checkpoint can outlast a change of Obsidian's excluded files.
+              if (isExcludedFile(this.app.metadataCache, file.path)) continue;
               body = await this.metadataParser.parse(content, () => this.workScheduler.checkpoint(INDEX_WORK_PRIORITY.background));
             } catch (error) {
               if (!current()) return false;
@@ -6897,6 +6900,9 @@ export class GraphIndex {
    */
   materializeFile(oldPath: string, file: TFile): boolean {
     if (this.app.vault.getFileByPath(file.path) !== file) return false;
+    // A note created on Obsidian's excluded-files list exists but is not part of the Plex: nothing
+    // is promoted, and the placeholder retires when its source's links resolve to the excluded note.
+    if (isExcludedFile(this.app.metadataCache, file.path)) return true;
     const existing = this.state.pages.get(oldPath);
     if (existing && existing.file !== file && !isMaterializablePage(existing)) return false;
     const readable = this.get(oldPath);

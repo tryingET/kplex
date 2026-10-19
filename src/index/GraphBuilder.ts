@@ -1337,8 +1337,9 @@ export class GraphBuilder {
 
     const flushWrites = async (): Promise<boolean> => {
       if (!pendingWrites.length) return true;
-      const batch = pendingWrites.splice(0, pendingWrites.length);
-      await this.bodyCache.putBodies(batch);
+      // A queued body whose note has joined Obsidian's excluded files since it was parsed is dropped.
+      const batch = pendingWrites.splice(0, pendingWrites.length).filter(record => !isExcludedFile(this.app.metadataCache, record.path));
+      if (batch.length) await this.bodyCache.putBodies(batch);
       return this.isCurrent();
     };
 

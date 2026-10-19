@@ -494,3 +494,83 @@ test('Given a prewarm or full build waiting on the body cache, when a note joins
     } finally { index.destroy(); }
   }
 });
+
+test('Given a body already queued for the cache, when its note joins the excluded files before the batch is written, then the batch leaves it out', async () => {
+  for (const pass of ['prewarm', 'rebuild']) {
+    const { M, app, metadataCache, advance, files, a } = fixture();
+    // Enough notes that a batch is written mid-pass (128 bodies on desktop), after A was queued.
+    for (let n = 0; n < 140; n++) {
+      const note = new a.constructor(`Notes/N${String(n).padStart(3, '0')}.md`); note.parent = a.parent; a.parent.children.push(note); files.set(note.path, note);
+    }
+    const index = excludedIndex(M, app);
+    index.plugin.settings.indexingMode = 'eager';
+    const cached = [];
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    app.vault.read = async file => `Body of ${file.path}`;
+    const parse = index.metadataParser.parse.bind(index.metadataParser);
+    // A's body is parsed and queued first; N010's parse waits until the list has changed.
+    index.metadataParser.parse = async (text, ...rest) => { if (text.includes('Notes/N010.md')) await held; return parse(text, ...rest); };
+    Object.assign(index.indexedDb, { bodyStoreReady: async () => true, getBodies: async () => new Map(),
+      putBodies: async records => { cached.push(...records.map(record => record.path)); return true; },
+      putBody: async path => { cached.push(path); return true; }, open: async () => null });
+    try {
+      let done = false;
+      (pass === 'prewarm' ? index.prewarmBodyCache(() => true) : index.rebuild()).then(() => { done = true; }, () => { done = true; });
+      for (let i = 0; i < 50 && !done; i++) await advance(20);
+      setFilters(metadataCache, ['Archive/', 'Notes/Secret.md', 'Notes/A.md']);
+      release();
+      for (let i = 0; i < 400 && !done; i++) await advance(20);
+      assert(done, `${pass} settles`);
+      assert.equal(cached.includes('Notes/A.md'), false, `${pass}: the queued body of the newly excluded note is not written`);
+    } finally { index.destroy(); }
+  }
+});
+
+test('Given a prewarm at its scheduler checkpoint, when the note joins the excluded files there, then it is not parsed', async () => {
+  const { M, app, metadataCache, advance } = fixture();
+  const index = excludedIndex(M, app);
+  const parsed = [];
+  app.vault.read = async file => `Body of ${file.path}`;
+  const parse = index.metadataParser.parse.bind(index.metadataParser);
+  index.metadataParser.parse = (text, ...rest) => { parsed.push(text); return parse(text, ...rest); };
+  Object.assign(index.indexedDb, { bodyStoreReady: async () => true, getBodies: async () => new Map(), putBodies: async () => true, open: async () => null });
+  // The list changes during the checkpoint that precedes the first parse.
+  const checkpoint = index.workScheduler.checkpoint.bind(index.workScheduler);
+  let reads = 0, changed = false;
+  // Count native reads on both paths (Vault.read, or the data adapter once index reads use it).
+  const read = app.vault.read, adapterRead = app.vault.adapter.read;
+  app.vault.read = async file => { reads += 1; return read(file); };
+  app.vault.adapter.read = async path => { reads += 1; return adapterRead(path); };
+  index.workScheduler.checkpoint = async (...args) => {
+    if (reads >= 2 && !changed) { changed = true; setFilters(metadataCache, ['Archive/', 'Notes/Secret.md', 'Notes/A.md']); }
+    return checkpoint(...args);
+  };
+  try {
+    let done = false;
+    index.prewarmBodyCache(() => true).then(() => { done = true; }, () => { done = true; });
+    for (let i = 0; i < 400 && !done; i++) await advance(20);
+    assert(done && changed, 'the prewarm ran past the change');
+    assert.equal(parsed.some(text => text.includes('Notes/A.md')), false, 'the newly excluded note is not parsed');
+    assert(parsed.some(text => text.includes('Notes/B.md')), 'control: the included note is parsed');
+  } finally { index.destroy(); }
+});
+
+test('Given a placeholder, when K-Plex materializes it as a note on the excluded files, then nothing is promoted and the action still succeeds', () => {
+  const { M, app, files, a } = fixture(['Archive/', 'Notes/NewSecret.md']);
+  const index = excludedIndex(M, app);
+  try {
+    index.insertCreatedFile(a);
+    // An unresolved placeholder, shown in a retained on-demand view, then created on the list.
+    const ghost = { path: 'Notes/NewSecret', file: null, name: 'NewSecret', url: null, isFolder: false, isTag: false, mtime: null,
+      aliases: [], tags: [], noteType: null, primaryStyleTag: null, styleTags: [], maxLabelLength: 0, neighbours: new Map() };
+    index.state.pages.set(ghost.path, ghost);
+    const view = M.createGraphState(); view.pages.set(ghost.path, ghost); view.pages.set(a.path, index.state.pages.get(a.path));
+    index.onDemandHostScopes.set(a.path, view);
+    const created = new a.constructor('Notes/NewSecret.md'); created.parent = a.parent; a.parent.children.push(created); files.set(created.path, created);
+    assert.equal(index.materializeFile(ghost.path, created), true, 'the creation flow continues (it opens the note)');
+    assert.equal([...index.state.pages.values()].some(page => page.file === created), false, 'no graph page binds the excluded note');
+    assert.equal([...view.pages.values()].some(page => page.file === created), false, 'nor does the retained view');
+    assert.equal(index.getVaultSearchPage('Notes/NewSecret.md'), undefined, 'no Find result');
+  } finally { index.destroy(); }
+});
