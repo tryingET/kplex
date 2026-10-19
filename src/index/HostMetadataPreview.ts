@@ -621,16 +621,25 @@ export class HostMetadataPreview {
     const revision = this.revision, settings = this.settings(), compilerSettings = graphCompilerSettingsFromLegacy(settings);
     const limit = Math.min(MAX_FOLDER_PREVIEW_COVER, Math.max(1, Math.floor(settings.maxItemCount || 100)));
     const selected = new Set<string>();
-    for (const path of this.tagMembers.get(centerPath) ?? []) { selected.add(path); if (selected.size >= limit) break; }
+    for (const path of this.tagMembers.get(centerPath) ?? []) {
+      // Obsidian's excluded files never become tag members; this guards the lookup's lifetime as well.
+      if (isExcludedFile(this.app.metadataCache, path)) continue;
+      selected.add(path); if (selected.size >= limit) break;
+    }
     /** Pick one stable lookup witness without copying or sorting all members/descendants. */
     const first = (values: Iterable<string> | undefined): string | undefined => { for (const value of values ?? []) return value; return undefined; };
+    /** Pick the first member that is not an excluded file, still without copying the member set. */
+    const firstMember = (values: Iterable<string> | undefined): string | undefined => {
+      for (const value of values ?? []) if (!isExcludedFile(this.app.metadataCache, value)) return value;
+      return undefined;
+    };
     // One descendant note is enough for the compiler to materialize each immediate child tag.
     let children = 0, inspected = 0;
     for (const child of this.tagChildren.get(centerPath) ?? []) {
       if (children++ >= limit) break;
       let tag: string | undefined = child;
       while (tag) {
-        const member = first(this.tagMembers.get(tag));
+        const member = firstMember(this.tagMembers.get(tag));
         if (member) { selected.add(member); break; }
         tag = first(this.tagChildren.get(tag));
         if ((++inspected & 63) === 0) {

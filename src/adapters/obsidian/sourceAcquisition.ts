@@ -1547,7 +1547,9 @@ export class ObsidianSourceAcquisition {
    * center previews may use the existing write-behind queue instead of joining cache storage. */
   private async loadBody(file: TFile, current: () => boolean, requireCurrentParser = false, background = false,
     awaitBodyWrite = true): Promise<ParsedBodyMetadata | null> {
-    const capture = this.capture(file); const valid = (): boolean => this.current(capture, current);
+    // Obsidian's excluded files are never read, parsed or cached, also when the list changes mid-read.
+    const capture = this.capture(file);
+    const valid = (): boolean => this.current(capture, current) && !isExcludedFile(this.app.metadataCache, file.path);
     if (background) await this.backgroundCheckpoint?.();
     if (!valid()) return null;
     const neutral = await this.readBody(file, valid, requireCurrentParser); if (!valid()) return null;

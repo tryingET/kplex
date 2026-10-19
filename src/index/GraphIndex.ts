@@ -1023,6 +1023,7 @@ export class GraphIndex {
     while (current() && !this.hasCurrentCanonicalCenter(centerPath)) {
       const file = this.app.vault.getFileByPath(centerPath);
       if (!file || file.extension !== "md" || !this.app.metadataCache.getFileCache(file)) return;
+      if (isExcludedFile(this.app.metadataCache, file.path)) return;
       const physical = captureFileRevision(file), source = this.plugin.getIndexSourceRevision();
       const host = this.hostPreview.observationRevision(), metadata = this.app.metadataCache.getFileCache(file);
       const maintenance = this.sourceAcquisition.getMaintenanceRevision();
@@ -6930,7 +6931,7 @@ export class GraphIndex {
         this.physicalSearchEntries.delete(path);
         this.hostFolderSearchEvents.set(path, null);
         const folder = replacement && this.app.vault.getFolderByPath(replacement.path + suffix);
-        if (folder) { const page = this.hostFolderSearchPage(folder), replacementEntry = { page, name: page.name.toLowerCase(), aliases: [], path: page.path.toLowerCase() };
+        if (folder && !isExcludedFolder(this.app.metadataCache, folder.path)) { const page = this.hostFolderSearchPage(folder), replacementEntry = { page, name: page.name.toLowerCase(), aliases: [], path: page.path.toLowerCase() };
           this.physicalSearchEntries.set(page.path, replacementEntry); this.hostFolderSearchEvents.set(page.path, replacementEntry); }
         continue;
       }
@@ -6938,15 +6939,18 @@ export class GraphIndex {
       const file = entry.page.file;
       this.retireHostEndpoint(path, replacement && file && this.app.vault.getFileByPath(file.path) === file ? file : undefined);
     }
-    if (replacement) { const page = this.hostFolderSearchPage(replacement), entry = { page, name: page.name.toLowerCase(), aliases: [], path: page.path.toLowerCase() };
+    if (replacement && !isExcludedFolder(this.app.metadataCache, replacement.path)) { const page = this.hostFolderSearchPage(replacement), entry = { page, name: page.name.toLowerCase(), aliases: [], path: page.path.toLowerCase() };
       this.physicalSearchEntries.set(page.path, entry); this.hostFolderSearchEvents.set(page.path, entry); }
     this.physicalSearchMerge = null; this.invalidateSearchCatalog(); this.emitPresentation();
   }
 
   /** Retire provisional endpoint owners without source certification; rename callers defer notification
    * until their retained graph coordinates are coherent, while ordinary availability calls notify now. */
-  private retireHostEndpoint(path: string, replacement?: TFile,
+  private retireHostEndpoint(path: string, movedTo?: TFile,
     options: Readonly<{ notify?: boolean; retainMovedReads?: boolean; materialize?: boolean }> = {}): boolean {
+    // A file moved into Obsidian's excluded files leaves the Plex: its new path gets no Find entry,
+    // backlinks or tags. Asynchronous folder remaps reach every descendant through this owner.
+    const replacement = movedTo && !isExcludedFile(this.app.metadataCache, movedTo.path) ? movedTo : undefined;
     const affected = new Set<string>([path, ...this.hostPreview.removeSource(path)]);
     if (replacement) {
       affected.add(replacement.path);
@@ -7258,6 +7262,9 @@ export class GraphIndex {
         if (this.diagnosticsClosed) return;
         if (this.state.pages.get(page.path) !== page) continue;
         const physical = this.app.vault.getFolderByPath(folder.path + suffix);
+        // A descendant that moved into Obsidian's excluded files is left to the structural refresh
+        // its own boundary rename schedules; it is never remapped to its new path.
+        if (physical instanceof TFolder && isExcludedFolder(this.app.metadataCache, physical.path)) continue;
         if (physical instanceof TFolder) this.renameTreeEndpoint(page.path, physical);
         else this.removeDeletedFolderEndpoint(page.path);
         await pause();
@@ -7265,6 +7272,7 @@ export class GraphIndex {
       for (const { page, file } of files) {
         if (this.diagnosticsClosed) return;
         if (this.state.pages.get(page.path) !== page) continue;
+        if (this.app.vault.getFileByPath(file.path) === file && isExcludedFile(this.app.metadataCache, file.path)) continue;
         if (this.app.vault.getFileByPath(file.path) === file) this.renameFile(page.path, file);
         else this.dematerializeFile(page.path);
         await pause();

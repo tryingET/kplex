@@ -642,6 +642,21 @@ test("on-demand candidates leave out Obsidian's excluded files before the owner 
   f.preview.dispose();
 });
 
+test("tag previews leave out members that are on Obsidian's excluded files", async () => {
+  const f = fixture();
+  const excluded = new Set();
+  f.app.metadataCache.isUserIgnored = path => excluded.has(path);
+  f.preview.observeTagSource(f.files.get(f.centerPath));
+  const tag = [...f.preview.tagPaths()].find(path => path.endsWith("project/nested"));
+  assert(tag, "the center's tag is observed");
+  const before = await f.preview.build(tag);
+  assert(before?.state.pages.has(f.centerPath), "control: the member is in its tag preview");
+  excluded.add(f.centerPath);
+  const after = await f.preview.build(tag);
+  assert.equal(after?.state.pages.has(f.centerPath) ?? false, false, "an excluded member is left out");
+  f.preview.dispose();
+});
+
 test("navigation uses indexed backlinks and source resolve/delete deltas", async () => {
   const f = fixture();
   await f.preview.initializeBacklinks();

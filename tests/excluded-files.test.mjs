@@ -351,3 +351,68 @@ test('Given Obsidian reports changed settings, when the excluded-files list is a
   listeners[0][1]('userIgnoreFilters');
   assert.equal(calls, 1);
 });
+
+test('Given a requested center read, when the note is excluded or joins the list during the read, then its body is never parsed or cached', async () => {
+  const { M, app, metadataCache, reads, files } = fixture();
+  const parsed = [], queued = [];
+  const acquisition = new M.ObsidianSourceAcquisition(app, new M.KplexIndexedDbCache('requested-read'),
+    async text => { parsed.push(text); return { urls: [], inlineFields: {}, inlineFieldOccurrences: [] }; });
+  acquisition.cache.queueBodyWrite = path => { queued.push(path); };
+  assert.equal(await acquisition.readRequestedBody(files.get('Archive/Old.md'), () => true), null);
+  assert.deepEqual(reads, [], 'an excluded center is never read');
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  /** Hold the body read of Notes/B.md until the list has changed. */
+  const read = async path => { reads.push(path); if (path === 'Notes/B.md') await held; return `Body of ${path}`; };
+  app.vault.cachedRead = file => read(file.path); app.vault.read = file => read(file.path); app.vault.adapter.read = read;
+  const pending = acquisition.readRequestedBody(files.get('Notes/B.md'), () => true);
+  for (let turn = 0; turn < 50 && !reads.includes('Notes/B.md'); turn++) await new Promise(resolve => setImmediate(resolve));
+  assert(reads.includes('Notes/B.md'), 'the read is in flight');
+  setFilters(metadataCache, ['Archive/', 'Notes/Secret.md', 'Notes/B.md']);
+  release();
+  assert.equal(await pending, null, 'a note that joins the list mid-read yields no body');
+  assert.deepEqual([parsed, queued], [[], []], 'nothing parsed or queued for the cache');
+  assert.notEqual(await acquisition.readRequestedBody(files.get('Notes/A.md'), () => true), null, 'control: an included center is read');
+  assert.deepEqual(queued, ['Notes/A.md']);
+});
+
+test('Given a folder rename whose descendant moves into the exclusion, when the asynchronous remap finishes after the boundary event, then the descendant stays out of Find and tags', async () => {
+  const { M, app, advance, files } = fixture(['Archive/', 'Docs/Secret.md']);
+  const settings = { indexingMode: 'on-demand', hierarchy: { hidden: [], parents: [], children: [], leftFriends: [], rightFriends: [], previous: [], next: [], exclusions: [] },
+    inferAllLinksAsFriends: false, inverseInfer: false, showFullTagName: true, tagStyleList: [], baseNodeStyle: { maxLabelLength: 30 }, maxItemCount: 30,
+    pinnedNodes: [], excludeFilepaths: [], nameFields: '', noteTypeField: 'Type', primaryTagField: 'Style' };
+  const notes = files.get('Notes/A.md').parent, members = ['Notes/A.md', 'Notes/B.md', 'Notes/Secret.md'].map(path => files.get(path));
+  // Tags follow the file object, so they survive the rename like Obsidian's metadata does.
+  const tags = new Map([[members[0], ['#kept']], [members[2], ['#secret']]]);
+  app.metadataCache.getFileCache = file => ({ frontmatter: {}, hostTags: tags.get(file) ?? [] });
+  const index = new M.GraphIndex({ app, settings, getIndexSourceRevision: () => 0 }, app);
+  /** Drive virtual timers until the promise settles. */
+  const settled = async promise => { let done = false; promise.then(() => { done = true; }); for (let i = 0; i < 400 && !done; i++) await advance(20); assert(done, 'settles'); };
+  try {
+    await settled(index.primePhysicalSearchCatalog());
+    // Canonical pages with folder ancestry and file-tree links, which the rename's canonical pass follows.
+    for (const file of members) index.insertCreatedFile(file);
+    assert(index.state.pages.has('Notes/Secret.md') && index.state.pages.has('folder:Notes'), 'canonical pages exist before the rename');
+    // Obsidian renames Notes → Docs: the folder event first (descendants already carry their new path).
+    notes.path = 'Docs'; notes.name = 'Docs';
+    for (const file of members) { files.delete(file.path); file.path = `Docs/${file.name}`; files.set(file.path, file); }
+    const folderAt = app.vault.getFolderByPath;
+    app.vault.getFolderByPath = path => path === 'Docs' ? notes : path === 'Notes' ? null : folderAt(path);
+    // The remap yields cooperatively (after 8 ms in a large vault); model that yield before its folder pass.
+    let resume;
+    const yielded = new Promise(resolve => { resume = resolve; });
+    const folderPass = index.updateHostFolderAvailability.bind(index);
+    index.updateHostFolderAvailability = async (...args) => { await yielded; return folderPass(...args); };
+    const remap = index.renameFolder('Notes', notes);
+    // Meanwhile the descendant's own boundary rename runs, as main.ts handles it (removal at both paths).
+    index.updateHostFileAvailability('Notes/Secret.md');
+    index.updateHostFileAvailability('Docs/Secret.md');
+    resume();
+    await settled(remap);
+    assert.equal(index.state.pages.get('Docs/Secret.md')?.file === members[2], false, 'the remap does not move the excluded descendant into the graph');
+    assert.equal(index.physicalSearchEntries.has('Docs/Secret.md'), false, 'nor back into Find');
+    assert.equal(index.getVaultSearchPage('Docs/Secret.md'), undefined);
+    assert.equal([...(index.hostPreview.tagMembers.get('tag:secret') ?? [])].includes('Docs/Secret.md'), false, 'nor into its tag');
+    assert(index.physicalSearchEntries.has('Docs/A.md'), 'control: included descendants move to their new path');
+  } finally { index.destroy(); }
+});
