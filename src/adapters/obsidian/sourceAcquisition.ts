@@ -72,7 +72,7 @@ import { createObsidianMetadataSourceHost, normalizedBodyUrl, ObsidianMetadataSo
 import { entityFactForFile, entityFactForFolder, ObsidianStructuralPatchSourceCollector,
   structuralMarkdownSourceOrder, tagRef } from "./structuralSourceCollector";
 import { hostLinkRecord } from "./hostLinkSourceCollector";
-import { excludedFilesListKey, indexedMarkdownFiles, isExcludedFile } from "./excludedFiles";
+import { indexedMarkdownFiles, isExcludedFile } from "./excludedFiles";
 import { resolveObsidianReferenceTarget } from "./ontologySourceCollector";
 
 type FileObservation = { identity: string | null; observation?: SourceObservation; validatedHostRevision?: number; revision: number; dirty: boolean; bodyDirty: boolean; resolutionDirty: boolean; path: string; oldPath?: string; created: boolean; impact: Promise<void> | null };
@@ -1017,26 +1017,10 @@ export class ObsidianSourceAcquisition {
       && this.app.vault.getFileByPath(physical.path) === file && file.path === physical.path
       && file.stat.mtime === physical.mtime && file.stat.size === physical.size && file.stat.ctime === physical.ctime;
   }
-  /**
-   * Hash only Date-registry observations, Daily Notes interpretation configuration, Obsidian's
-   * excluded-files list and which of this source's resolved link targets are on it, not K-Plex
-   * settings. Like the Daily Notes settings, the list changes without a vault event, and ontology
-   * and date references resolve against it also outside `resolvedLinks`; a list change therefore
-   * re-resolves every persisted head once, and a target joining or leaving the list re-resolves the
-   * sources linking to it. Both keys appear only when non-empty, so heads made without a list keep
-   * their digest.
-   *
-   * @param cache - the source's current metadata
-   * @param path - the source's vault path
-   * @returns the observation text that is digested into the head
-   */
-  private environment(cache: CachedMetadata, path: string): string {
-    const excluded = Object.keys(this.app.metadataCache.resolvedLinks[path] ?? {})
-      .filter((target) => isExcludedFile(this.app.metadataCache, target)).sort();
-    const excludedFiles = excludedFilesListKey(this.app.metadataCache);
+  /** Hash only Date-registry observations and Daily Notes interpretation configuration, not K-Plex settings. */
+  private environment(cache: CachedMetadata): string {
     return JSON.stringify({ daily: this.metadataHost.dailyNotesSettings(), dates: Object.keys(cache.frontmatter ?? {})
-      .filter((name) => name !== "position" && this.metadataHost.isDateProperty(name)).sort(),
-    ...(excludedFiles ? { excludedFiles } : {}), ...(excluded.length ? { excluded } : {}) });
+      .filter((name) => name !== "position" && this.metadataHost.isDateProperty(name)).sort() });
   }
   /**
    * Capture host inputs not represented by neutral source facts. Current-session memory/disk replay
@@ -1055,10 +1039,10 @@ export class ObsidianSourceAcquisition {
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache) return selectedSourceFailure("pending-metadata");
     if (capture.state.dirty || capture.state.bodyDirty || capture.state.resolutionDirty || capture.state.created) return selectedSourceFailure("unsaved");
-    const environmentText = this.environment(cache, file.path);
+    const environmentText = this.environment(cache);
     const maintenanceRevision = this.maintenanceRevision;
     const current = (): boolean => this.current(capture, runtime.isCurrent) && (pairLocal || this.maintenanceRevision === maintenanceRevision)
-      && this.app.metadataCache.getFileCache(file) === cache && this.environment(cache, file.path) === environmentText;
+      && this.app.metadataCache.getFileCache(file) === cache && this.environment(cache) === environmentText;
     try {
       const environment = await this.repository.observationDigest(environmentText);
       if (!current()) return selectedSourceFailure(runtime.isCurrent() ? "stale" : "cancelled");
@@ -1689,8 +1673,8 @@ export class ObsidianSourceAcquisition {
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache) { this.counters.pendingMetadata += 1; return { current: current(), saved: false, reason: "pending-metadata" }; }
     try {
-      const environmentText = this.environment(cache, file.path);
-      const observationCurrent = (): boolean => current() && this.environment(cache, file.path) === environmentText
+      const environmentText = this.environment(cache);
+      const observationCurrent = (): boolean => current() && this.environment(cache) === environmentText
         && this.app.metadataCache.getFileCache(file) === cache;
       const environment = await this.repository.observationDigest(environmentText);
       if (!current()) return { current: false, saved: false, reason: "cancelled" };
@@ -1720,7 +1704,7 @@ export class ObsidianSourceAcquisition {
           inspection = await this.repository.inspect(file.path, SOURCE_FAMILIES, current);
         }
       }
-      if (!current() || this.environment(cache, file.path) !== environmentText || this.app.metadataCache.getFileCache(file) !== cache) return { current: false, saved: false, reason: "cancelled" };
+      if (!current() || this.environment(cache) !== environmentText || this.app.metadataCache.getFileCache(file) !== cache) return { current: false, saved: false, reason: "cancelled" };
       this.counters.checked += 1;
       const head = inspection.head;
       this.observeUrlAliasGrammar(file.path, head);
@@ -2001,7 +1985,7 @@ export class ObsidianSourceAcquisition {
           const hostCache = this.app.metadataCache.getFileCache(file);
           if (!hostCache) { this.counters.pendingMetadata += 1; complete = false; this.startupDiagnostics?.processed("source", file.path); continue; }
           this.observeEnvironment(hostCache);
-          const environment = await this.repository.observationDigest(this.environment(hostCache, file.path));
+          const environment = await this.repository.observationDigest(this.environment(hostCache));
           const inspection = await this.repository.inspect(file.path, [], current);
           if (!current()) return false;
           const head = inspection.head;

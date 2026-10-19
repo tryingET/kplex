@@ -228,9 +228,11 @@ test('Given a note moved into or out of the excluded files, when it is renamed, 
   host.dirtyMarkdownPaths.add('Notes/B.md');
   handlers.get('rename')(new TFile('Archive/B.md'), 'Notes/B.md');
   handlers.get('rename')(new TFile('Notes/Restored.md'), 'Archive/Old.md');
-  assert.deepEqual(effects, [['index.invalidateHostStructure'], ['remap', 'Notes/B.md', 'Archive/B.md', false], ['rebuild', 'vault:excluded-boundary'],
-    ['index.invalidateHostStructure'], ['remap', 'Archive/Old.md', 'Notes/Restored.md', false], ['rebuild', 'vault:excluded-boundary']],
-    'no index path remap across the exclusion, but persisted navigation follows the file');
+  assert.deepEqual(effects, [['index.invalidateHostStructure'], ['index.updateHostFileAvailability', 'Notes/B.md'], ['index.updateHostFileAvailability', 'Archive/B.md', undefined],
+    ['remap', 'Notes/B.md', 'Archive/B.md', false], ['rebuild', 'vault:excluded-boundary'],
+    ['index.invalidateHostStructure'], ['index.updateHostFileAvailability', 'Archive/Old.md'], ['index.updateHostFileAvailability', 'Notes/Restored.md', 'Notes/Restored.md'],
+    ['remap', 'Archive/Old.md', 'Notes/Restored.md', false], ['rebuild', 'vault:excluded-boundary']],
+    'Find drops or gains the file at once; no index path remap across the exclusion, but persisted navigation follows the file');
   assert.equal(host.dirtyMarkdownPaths.has('Notes/B.md'), false);
   assert.equal(host.cachedMarkdownFileCount, null, 'the indexed-note total is recounted');
 });
@@ -265,27 +267,6 @@ test('Given an excluded last center or history entry, when startup seeds the Ple
     'excluded notes and folder nodes are no seeds; tags and unresolved names are not vault files');
 });
 
-test('Given web-link owners persisted for notes that are excluded now, when the cache is restored, then they are dropped', async () => {
-  const { M, app, advance } = fixture();
-  const settings = { indexingMode: 'on-demand', hierarchy: { hidden: [], parents: [], children: [], leftFriends: [], rightFriends: [], previous: [], next: [], exclusions: [] },
-    inferAllLinksAsFriends: false, inverseInfer: false, showFullTagName: true, tagStyleList: [], baseNodeStyle: { maxLabelLength: 30 }, maxItemCount: 30,
-    pinnedNodes: [], excludeFilepaths: [], nameFields: '', noteTypeField: 'Type', primaryTagField: 'Style' };
-  const index = new M.GraphIndex({ app, settings, getIndexSourceRevision: () => 0 }, app);
-  const deleted = [];
-  const owner = path => ({ path, mtime: 1, size: 100, version: 3, parserVersion: 3, frontmatter: {}, urls: [], inlineFieldOccurrences: [] });
-  Object.assign(index.indexedDb, { open: async () => ({}), purgeAndClose: async () => true, deleteUrlOwner: async path => { deleted.push(path); return true; },
-    readUrlOwners: async visit => { await visit([owner('Archive/Old.md'), owner('Notes/A.md')]); return true; } });
-  try {
-    let settled = false;
-    index.restoreUrlIndex().then(() => { settled = true; });
-    for (let step = 0; step < 400 && !settled; step++) await advance(50);
-    assert.equal(settled, true);
-    assert.deepEqual(deleted, ['Archive/Old.md'], 'the persisted owner of the excluded note is deleted');
-    assert.equal(index.urlOwners.has('Archive/Old.md'), false);
-    assert.equal(index.urlOwners.has('Notes/A.md'), true, 'included owners are restored as before');
-  } finally { index.destroy(); }
-});
-
 test('Given a folder-only filter, when files below it are listed, then the subtree is excluded like the structural walk prunes it', async () => {
   const { M, app } = fixture(['/^Archive\\/$/']);
   assert.equal(M.isExcludedFolder(app.metadataCache, 'Archive'), true);
@@ -296,30 +277,6 @@ test('Given a folder-only filter, when files below it are listed, then the subtr
     'eager inventory sees the same Markdown set from the walk and from the file list');
   const records = await collectAll(new M.ObsidianStructuralSourceCollector(app, runtime));
   assert.equal(JSON.stringify(records).includes('"Archive/Old.md"'), false);
-});
-
-test('Given a source whose link target becomes excluded, when its environment is observed, then a persisted head no longer matches', () => {
-  const { M, app, metadataCache } = fixture();
-  const acquisition = new M.ObsidianSourceAcquisition(app, new M.KplexIndexedDbCache(app.vault), async () => ({ urls: [], inlineFields: {}, inlineFieldOccurrences: [] }));
-  const cache = { frontmatter: {} };
-  const excluded = JSON.parse(acquisition.environment(cache, 'Notes/A.md'));
-  assert.deepEqual(excluded.excluded, ['Archive/Old.md', 'Notes/Secret.md'], 'the excluded targets of this source are part of its environment');
-  setFilters(metadataCache, []);
-  const included = JSON.parse(acquisition.environment(cache, 'Notes/A.md'));
-  assert.equal('excluded' in included || 'excludedFiles' in included, false, 'without a list the environment keeps its previous shape');
-  assert.notDeepEqual(excluded, included, 'changing the list changes the observation, so the head is re-resolved');
-});
-
-test('Given a source whose references resolve outside resolvedLinks, when the excluded-files list changes, then its environment changes', () => {
-  const { M, app, metadataCache } = fixture(['Archive/']);
-  const acquisition = new M.ObsidianSourceAcquisition(app, new M.KplexIndexedDbCache(app.vault), async () => ({ urls: [], inlineFields: {}, inlineFieldOccurrences: [] }));
-  // Notes/B.md has no resolved links; a plain-text ontology value or a date property is resolved by name.
-  const cache = { frontmatter: { parent: 'Secret' } };
-  const before = acquisition.environment(cache, 'Notes/B.md');
-  setFilters(metadataCache, ['Archive/', 'Notes/Secret.md']);
-  const after = acquisition.environment(cache, 'Notes/B.md');
-  assert.notEqual(after, before, 'a list change re-resolves the head, also when no resolved link changed');
-  assert.equal(JSON.parse(after).excludedFiles, JSON.stringify(['Archive/', 'Notes/Secret.md']));
 });
 
 test('Given a web-link scan that is reading a note, when the note joins the excluded files, then it never publishes or persists', async () => {
@@ -344,9 +301,8 @@ test('Given a web-link scan that is reading a note, when the note joins the excl
     assert.equal(f.index.urlOwners.has('Notes/B.md'), true, 'control: an included note publishes its web links');
     assert(f.index.urlOwnerTasks.has('Archive/Old.md'), 'the read of Archive/Old.md is still in flight');
     excluded = true;
-    const retired = f.index.retireExcludedUrlOwners();
     release();
-    await Promise.all([scan, retired]);
+    await scan;
     for (let turn = 0; turn < 200 && f.index.urlOwnerTasks.size; turn++) await hostTurn();
     assert.equal(f.index.urlOwners.has('Archive/Old.md'), false, 'the excluded note has no web-link owner');
     assert.deepEqual(stored, ['Notes/B.md'], 'only the included owner is persisted');
@@ -356,23 +312,42 @@ test('Given a web-link scan that is reading a note, when the note joins the excl
   } finally { f.close(); }
 });
 
-test('Given web-link owners for notes that are excluded now, when the list change is applied, then those owners are retired', async () => {
-  const { M, app, advance } = fixture();
-  const settings = { indexingMode: 'on-demand', hierarchy: { hidden: [], parents: [], children: [], leftFriends: [], rightFriends: [], previous: [], next: [], exclusions: [] },
-    inferAllLinksAsFriends: false, inverseInfer: false, showFullTagName: true, tagStyleList: [], baseNodeStyle: { maxLabelLength: 30 }, maxItemCount: 30,
-    pinnedNodes: [], excludeFilepaths: [], nameFields: '', noteTypeField: 'Type', primaryTagField: 'Style' };
-  const index = new M.GraphIndex({ app, settings, getIndexSourceRevision: () => 0 }, app);
-  const deleted = [];
-  Object.assign(index.indexedDb, { open: async () => ({}), purgeAndClose: async () => true, deleteUrlOwner: async path => { deleted.push(path); return true; } });
-  try {
-    for (const file of [app.vault.getFileByPath('Archive/Old.md'), app.vault.getFileByPath('Notes/A.md')])
-      index.urlOwners.set(file.path, { file, mtime: file.stat.mtime, size: file.stat.size, event: 0 });
-    let settled = false;
-    Promise.resolve(index.retireExcludedUrlOwners()).then(() => { settled = true; });
-    for (let step = 0; step < 200 && !settled; step++) await advance(50);
-    assert.equal(settled, true);
-    assert.deepEqual(deleted, ['Archive/Old.md']);
-    assert.equal(index.urlOwners.has('Archive/Old.md'), false);
-    assert.equal(index.urlOwners.has('Notes/A.md'), true);
-  } finally { index.destroy(); }
+test('Given a folder rename that moves a descendant into the exclusion, when the descendant event follows, then Find drops it at its new path and the Plex refreshes', () => {
+  const { host, handlers, effects, deps, TFile } = listenerHost();
+  host.app.metadataCache.isUserIgnored = userIgnore(['Projects/Secret.md']);
+  productionMethod('registerReactiveIndexListeners', deps).call(host);
+  // Obsidian reports the folder first (its descendants already carry the new path), then each descendant.
+  handlers.get('rename')(new TFile('Projects/Secret.md'), 'Drafts/Secret.md');
+  assert.deepEqual(effects.filter(([name]) => name === 'index.updateHostFileAvailability'),
+    [['index.updateHostFileAvailability', 'Drafts/Secret.md'], ['index.updateHostFileAvailability', 'Projects/Secret.md', undefined]],
+    'the descendant leaves Find at its old and its new path');
+  assert.deepEqual(effects.filter(([name]) => name === 'rebuild'), [['rebuild', 'vault:excluded-boundary']]);
+});
+
+test('Given the index cache epoch, when the list is unchanged, set for the first time or changed, then only a different list discards the cache', () => {
+  const { M } = fixture();
+  const storage = new Map();
+  const host = list => ({ metadataCache: { isUserIgnored: () => false, userIgnoreFiltersString: JSON.stringify(list) },
+    loadLocalStorage: key => storage.has(key) ? storage.get(key) : null, saveLocalStorage: (key, value) => storage.set(key, value) });
+  assert.equal(M.indexCacheExclusionEpoch(host([])).matches(), true, 'nothing recorded and no list: the existing cache is kept');
+  assert.equal(M.indexCacheExclusionEpoch(host(['Archive/'])).matches(), false, 'nothing recorded and a list: a cache from before the list is discarded');
+  M.indexCacheExclusionEpoch(host(['Archive/'])).adopt();
+  assert.equal(M.indexCacheExclusionEpoch(host(['Archive/'])).matches(), true, 'the same list keeps the cache');
+  assert.equal(M.indexCacheExclusionEpoch(host(['Archive/', 'Notes/Secret.md'])).matches(), false, 'another list discards it');
+  M.indexCacheExclusionEpoch(host(['Archive/'])).invalidate();
+  assert.equal(M.indexCacheExclusionEpoch(host(['Archive/'])).matches(), false, 'an in-session change discards it at the next start, also if changed back');
+  assert.equal(M.indexCacheExclusionEpoch({ metadataCache: {}, loadLocalStorage() { return null; }, saveLocalStorage() {} }), null, 'no filter API: no epoch');
+  assert.equal(M.indexCacheExclusionEpoch({ metadataCache: { isUserIgnored: () => false } }), null, 'no vault-local storage: no epoch');
+});
+
+test('Given Obsidian reports changed settings, when the excluded-files list is among them, then the observer runs only for it', () => {
+  const { M } = fixture();
+  const listeners = [];
+  const vault = { on: (name, callback) => { listeners.push([name, callback]); return { name }; } };
+  let calls = 0;
+  M.onExcludedFilesListChanged(vault, () => { calls += 1; });
+  assert.deepEqual(listeners.map(([name]) => name), ['config-changed']);
+  listeners[0][1]('attachmentFolderPath');
+  listeners[0][1]('userIgnoreFilters');
+  assert.equal(calls, 1);
 });

@@ -157,7 +157,7 @@ import {
 
 import { tagDisplayName } from "../core/graph/presentation";
 import { captureSettingsPolicy, classifySettingsChange, compareIndexSettingsSignature } from "../core/graph/settingsPolicy";
-import { indexedMarkdownFiles, isExcludedFile, isExcludedFolder } from "../adapters/obsidian/excludedFiles";
+import { indexCacheExclusionEpoch, indexedMarkdownFiles, isExcludedFile, isExcludedFolder } from "../adapters/obsidian/excludedFiles";
 import {
   ALL_PRESENTATION_FACETS, applyPreparedPresentation, capturePresentationSettings, prepareGraphPresentation,
   presentationFacetsForPage, withPreparedPresentation, type PreparedGraphPresentation, type PresentationStatus,
@@ -706,7 +706,9 @@ export class GraphIndex {
         if (!this.diagnosticsClosed && this.snapshotHydrationDiagnostics.phase === "source-authority") {
           this.touchSnapshotHydrationProgress(this.snapshotHydrationRun);
         }
-      });
+      },
+      // A cache built under another excluded-files list is discarded once before it opens.
+      indexCacheExclusionEpoch(app));
     this.sourceAcquisition = new ObsidianSourceAcquisition(app, this.indexedDb, (text, backgroundCheckpoint) => this.metadataParser.parse(text, backgroundCheckpoint),
       /** Source closure wakes a deferred restore and retries only current visible semantic demand. */
       () => {
@@ -748,7 +750,6 @@ export class GraphIndex {
     if (this.persistentCachePurged || this.diagnosticsClosed) return false;
     if (rebuildBaseline) {
       // A topology epoch retires both the old baseline and demanded owner continuations.
-      void this.retireExcludedUrlOwners();
       this.onDemandBaselineRevision += 1;
       this.generation += 1;
       this.onDemandBaselineTask = null;
@@ -3763,9 +3764,8 @@ export class GraphIndex {
       for (const record of records) {
         if (!current()) return;
         const file = this.app.vault.getFileByPath(record.path);
-        // Owners persisted before a note was added to Obsidian's excluded files are dropped too.
         if (!file || file.extension !== "md" || file.stat.mtime !== record.mtime || file.stat.size !== record.size
-          || (this.urlOwnerEvents.get(record.path) ?? 0) !== 0 || isExcludedFile(this.app.metadataCache, record.path)) {
+          || (this.urlOwnerEvents.get(record.path) ?? 0) !== 0) {
           void this.indexedDb.deleteUrlOwner(record.path); continue;
         }
         await this.publishUrlOwner(file, { urls: record.urls, inlineFieldOccurrences: record.inlineFieldOccurrences, inlineFields: {} }, 0, record.frontmatter, true, lifetime);
@@ -4268,20 +4268,6 @@ export class GraphIndex {
     });
     this.urlOwnerTasks.set(path, task);
     return task;
-  }
-
-  /**
-   * Retire web-link owners of notes that are on Obsidian's excluded-files list now, for example after
-   * the list changed in this session, including acquisitions still in flight. Runs at the start of
-   * every graph rebuild; each owner goes through the normal refresh, which retires its evidence and
-   * deletes its persisted record.
-   *
-   * @returns once every affected owner is retired
-   */
-  async retireExcludedUrlOwners(): Promise<void> {
-    const excluded = [...new Set([...this.urlOwners.keys(), ...this.urlOwnerTasks.keys()])]
-      .filter((path) => isExcludedFile(this.app.metadataCache, path));
-    await Promise.all(excluded.map((path) => this.refreshUrlOwner(path)));
   }
 
   /**
@@ -6401,7 +6387,6 @@ export class GraphIndex {
       }
       this.building = true;
       this.retirePhysicalFolderInventory();
-      void this.retireExcludedUrlOwners();
       this.semanticPreparationDiagnostics = { ...this.semanticPreparationDiagnostics,
         fullBuilds: this.semanticPreparationDiagnostics.fullBuilds + 1 };
       const run = ++this.generation;

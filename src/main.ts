@@ -99,7 +99,7 @@ import { PartialRelatedFileError } from "./adapters/obsidian/relatedFileOutcome"
 import { capturePlaceholderRelocation, applyPlaceholderRelocation, assertPlaceholderRelocationTarget, placeholderReference, type PlaceholderRelocation } from "./adapters/obsidian/placeholderRelocation";
 import { ActionManager, type ActionContext, type ActionImplementations, type SidecarFoldRoute, type SidecarFoldTarget } from "./application/ActionManager";
 import { frontmatterDeclarationKey } from "./application/frontmatterUnlink";
-import { indexedMarkdownFiles, isExcludedFile, isExcludedFolder, isExcludedNodePath } from "./adapters/obsidian/excludedFiles";
+import { indexCacheExclusionEpoch, indexedMarkdownFiles, isExcludedFile, isExcludedFolder, isExcludedNodePath, onExcludedFilesListChanged } from "./adapters/obsidian/excludedFiles";
 import { ACTION_BY_ID, ACTION_RELATION_ROLES, type ActionId, type ActionOutcome, type ActionRequest, type Availability } from "./core/plex/actions";
 import { compileActionBindings, migrateActionPreferences, sanitizeActionPreferences, type ActionPreferencesV1 } from "./core/plex/actionPreferences";
 import { createActionCommandPublisher, type ActionCommandPublisher } from "./adapters/obsidian/actionCommands";
@@ -360,6 +360,8 @@ export default class KplexPlugin extends Plugin {
       file => { if (file instanceof TFile && file.extension === "md" && this.layoutReady) void this.index.refreshUrlOwner(file.path); }));
     this.registerEvent(this.app.vault.on("delete", /** Deleted owners cannot retain URL reference counts. */
       file => { if (file instanceof TFile && file.extension === "md") void this.index.refreshUrlOwner(file.path); }));
+    // A list change takes full effect at the next start, which discards the index cache once.
+    this.registerEvent(onExcludedFilesListChanged(this.app.vault, () => indexCacheExclusionEpoch(this.app)?.invalidate()));
     this.registerEvent(this.app.vault.on("rename", /** Old URL source coordinates retire before the renamed owner publishes. */
       (file, oldPath) => { if (file instanceof TFile) {
         if (oldPath.toLowerCase().endsWith(".md")) void this.index.refreshUrlOwner(oldPath);
@@ -969,6 +971,15 @@ export default class KplexPlugin extends Plugin {
           this.index.invalidateHostStructure();
           this.cachedMarkdownFileCount = null;
           this.dirtyMarkdownPaths.delete(oldPath);
+          // Find and previews follow at once, at both paths: a folder rename has already moved an
+          // excluded descendant to its new path before the descendant's own rename event.
+          if (renamed instanceof TFile) {
+            this.index.updateHostFileAvailability(oldPath);
+            this.index.updateHostFileAvailability(renamed.path, isExcluded ? undefined : renamed);
+          } else if (renamed instanceof TFolder) {
+            void this.index.updateHostFolderAvailability(oldPath);
+            void this.index.updateHostFolderAvailability(renamed.path, isExcluded ? undefined : renamed);
+          }
           // Persisted center, history and pins follow the file even while it is excluded.
           if (this.remapNavigationPaths(oldPath, renamed.path, folder)) void this.saveSettings(false, false);
           this.scheduleRebuild("vault:excluded-boundary");

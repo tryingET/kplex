@@ -15,8 +15,18 @@
  * folder's subtree, and every flat file list agree. The vault root is never excluded. Obsidian
  * caches each answer per path and clears that cache when the filter list changes; it keeps the
  * configured list as JSON in `MetadataCache.userIgnoreFiltersString`, also undocumented.
+ *
+ * K-Plex's persistent index cache never outlives a list: it records the list it was built under in
+ * Obsidian's vault-local storage, and a cache built under another list is discarded once before it
+ * opens (`indexCacheExclusionEpoch()`). A change during a session marks the record stale through
+ * Obsidian's undocumented `config-changed` Vault event, which its MetadataCache also listens to.
  */
-import type { App, TFile } from "obsidian";
+import type { App, EventRef, Events, TFile } from "obsidian";
+
+/** Vault-local storage key recording the excluded-files list K-Plex's index cache was built under. */
+const INDEX_CACHE_LIST_KEY = "k-plex-index-excluded-files";
+/** Recorded after an in-session list change; differs from every list Obsidian can report. */
+const INDEX_CACHE_LIST_STALE = "stale";
 
 /** The undocumented MetadataCache member that applies Obsidian's excluded-file filters. */
 interface UserIgnoreProbe {
@@ -102,6 +112,48 @@ export function excludedFilesListKey(metadataCache: object): string | null {
   if (!hasUserIgnoreProbe(metadataCache)) return null;
   const key: unknown = Reflect.get(metadataCache, "userIgnoreFiltersString");
   return typeof key === "string" && key !== "" && key !== "null" && key !== "[]" ? key : null;
+}
+
+/** Whether K-Plex's persistent index cache follows the current excluded-files list. */
+export interface IndexCacheExclusionEpoch {
+  /** True when the cache was built under the current list, or no list was ever recorded and none is set. */
+  matches(): boolean;
+  /** Record that the cache now follows the current list. */
+  adopt(): void;
+  /** Record that the list changed, so the next start discards the cache. */
+  invalidate(): void;
+}
+
+/**
+ * The excluded-files epoch of K-Plex's persistent index cache on this device. A cache from before
+ * K-Plex honoured the list (nothing recorded) is kept only when no list is set.
+ *
+ * @param app - the host app (metadata cache and vault-local storage)
+ * @returns the epoch, or null when the host has no excluded-files filter or no vault-local storage
+ */
+export function indexCacheExclusionEpoch(app: Pick<App, "metadataCache" | "loadLocalStorage" | "saveLocalStorage">): IndexCacheExclusionEpoch | null {
+  if (!hasUserIgnoreProbe(app.metadataCache) || typeof app.loadLocalStorage !== "function" || typeof app.saveLocalStorage !== "function") return null;
+  const current = (): string => excludedFilesListKey(app.metadataCache) ?? "";
+  return {
+    matches: () => {
+      const recorded: unknown = app.loadLocalStorage(INDEX_CACHE_LIST_KEY), list = current();
+      return recorded === list || (recorded === null && list === "");
+    },
+    adopt: () => app.saveLocalStorage(INDEX_CACHE_LIST_KEY, current()),
+    invalidate: () => app.saveLocalStorage(INDEX_CACHE_LIST_KEY, INDEX_CACHE_LIST_STALE),
+  };
+}
+
+/**
+ * Observe changes of Obsidian's excluded-files list. Obsidian's Vault reports every changed app
+ * setting through its undocumented `config-changed` event; this one is `userIgnoreFilters`.
+ *
+ * @param vault - the vault, as the event source
+ * @param callback - called after the list changed
+ * @returns the event reference to register with the plugin
+ */
+export function onExcludedFilesListChanged(vault: Events, callback: () => void): EventRef {
+  return vault.on("config-changed", (key: unknown) => { if (key === "userIgnoreFilters") callback(); });
 }
 
 /**

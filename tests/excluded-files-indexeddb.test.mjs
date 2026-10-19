@@ -10,7 +10,7 @@ import { contributorBrowserBundle, contributorBrowserInitialize } from './suppor
 import { chromiumHarness } from './support/browserTypeScript.mjs';
 import { centerGateSettings } from './support/requestedCenterGateFixture.mjs';
 
-const bundle = await contributorBrowserBundle(['src/index/GraphIndex.ts', 'src/index/GraphBuilder.ts', 'src/index/IndexSnapshot.ts']);
+const bundle = await contributorBrowserBundle(['src/index/GraphIndex.ts', 'src/index/GraphBuilder.ts', 'src/index/IndexSnapshot.ts', 'src/adapters/obsidian/excludedFiles.ts']);
 
 const initialize = `(() => {
   window.excludedFixture = async (name) => {
@@ -93,3 +93,41 @@ test('Given an indexed note, when it is renamed into the exclusion, then its old
   } finally { o.close(); }
   return true;
 })()`));
+
+test('Given an index cache and the excluded-files epoch, when the cache opens, then only a cache built under another list is discarded, once', async () => scenario(`(async () => {
+  const M = sourceModules, name = 'excluded-epoch', storage = new Map();
+  /** A host whose excluded-files list is the given one; vault-local storage is shared. */
+  const host = list => ({ metadataCache: { isUserIgnored: () => false, userIgnoreFiltersString: JSON.stringify(list) },
+    loadLocalStorage: key => storage.has(key) ? storage.get(key) : null, saveLocalStorage: (key, value) => storage.set(key, value) });
+  /** Write one web-link owner record through a cache with this epoch. */
+  const write = async epoch => {
+    const cache = new M.KplexIndexedDbCache(name, undefined, undefined, epoch);
+    try { return await cache.putUrlOwners([{ path: 'A.md', mtime: 1, size: 1, urls: [], inlineFieldOccurrences: [], frontmatter: {} }]); } finally { cache.close(); }
+  };
+  /** The owner records a cache with this epoch finds when it opens. */
+  const owners = async epoch => {
+    const cache = new M.KplexIndexedDbCache(name, undefined, undefined, epoch), seen = [];
+    try { await cache.readUrlOwners(async records => { seen.push(...records.map(record => record.path)); }, () => true); return seen; } finally { cache.close(); }
+  };
+  ok(await write(null), 'a cache from before K-Plex honoured the list');
+  equal(await owners(M.indexCacheExclusionEpoch(host(['Archive/']))), [], 'with a list set it is discarded');
+  ok(await write(M.indexCacheExclusionEpoch(host(['Archive/']))), 'rebuilt under the list');
+  equal(await owners(M.indexCacheExclusionEpoch(host(['Archive/']))), ['A.md'], 'the same list keeps it');
+  equal(await owners(M.indexCacheExclusionEpoch(host(['Archive/', 'Notes/']))), [], 'another list discards it');
+  ok(await write(M.indexCacheExclusionEpoch(host(['Archive/', 'Notes/']))), 'rebuilt under the new list');
+  M.indexCacheExclusionEpoch(host(['Archive/', 'Notes/'])).invalidate();
+  equal(await owners(M.indexCacheExclusionEpoch(host(['Archive/', 'Notes/']))), [], 'an in-session change discards it at the next open');
+  storage.clear(); ok(await write(null), 'an older cache');
+  equal(await owners(M.indexCacheExclusionEpoch(host([]))), ['A.md'], 'without a list an older cache is kept');
+  // Another open connection blocks the deletion: the cache stays unavailable, nothing stale is read.
+  const holder = await new Promise((resolve, reject) => { const request = indexedDB.open(dbName(name)); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+  try {
+    const epoch = M.indexCacheExclusionEpoch(host(['Other/']));
+    const cache = new M.KplexIndexedDbCache(name, undefined, undefined, epoch), seen = [];
+    const read = await cache.readUrlOwners(async records => { seen.push(...records.map(record => record.path)); }, () => true);
+    cache.close();
+    equal([read, seen, epoch.matches()], [false, [], false], 'a blocked deletion leaves the cache unavailable and the epoch unadopted');
+  } finally { holder.close(); }
+  return true;
+})()`));
+

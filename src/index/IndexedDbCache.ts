@@ -18,6 +18,7 @@
  * durability or neutral-source authority. A successful flush retires only its exact queued records.
  * Settings-only maintenance estimates logical payloads through sequential cursors. Purging ends
  * this owner's lifetime before deleting this vault's database; no same-session reopen is allowed.
+ * An optional host-input epoch discards a database built under other inputs once, before it opens.
  * Broad maintenance uses its injected P4 checkpoint; URL-owner restoration supplies a P3 override,
  * while foreground point reads never borrow the lower-priority maintenance checkpoint. URL-page
  * progress is reported only after acquisition; the GraphIndex caller owns its bounded wait and
@@ -331,8 +332,20 @@ function estimatedStoredValueBytes(value: unknown): number | null {
 }
 
 /** Durable K-Plex cache backed by IndexedDB. */
+/**
+ * Host inputs a database was built under, outside K-Plex's own settings (Obsidian's excluded files).
+ * A database built under other inputs is deleted before it opens.
+ */
+export interface CacheEpoch {
+  /** Whether the existing database was built under the current inputs. */
+  matches(): boolean;
+  /** Record that the database now follows the current inputs. */
+  adopt(): void;
+}
+
 export class KplexIndexedDbCache {
   private dbPromise: Promise<IDBDatabase | null> | null = null;
+  private inputEpochTask: Promise<boolean> | null = null;
   private openFailureCount = 0;
   private openRetryAfter = 0;
   private queuedBodyWrites = new Map<string, BodyRecord>();
@@ -354,7 +367,8 @@ export class KplexIndexedDbCache {
 
   /** Share one connection owner. The injected checkpoint belongs to broad cache maintenance (P4);
    * caller-specific URL restore overrides it with P3 and foreground point reads never borrow it. */
-  constructor(private vaultName: string, private readonly backgroundCheckpoint?: () => Promise<void>, completedWork?: () => void) {
+  constructor(private vaultName: string, private readonly backgroundCheckpoint?: () => Promise<void>, completedWork?: () => void,
+    private readonly inputEpoch?: CacheEpoch | null) {
     this.sources = new NeutralSourceRepository({ open: () => this.open(), failed: (db) => this.storageFailed(db),
       unavailableReason: () => this.newerDatabase ? "newer-database" : "storage-unavailable",
       /** Cleanup borrows no normal writer authority and accepts only an ended reader's lease. */
@@ -406,8 +420,9 @@ export class KplexIndexedDbCache {
     if (this.dbPromise) return this.dbPromise;
     if (Date.now() < this.openRetryAfter) return Promise.resolve(null);
     const epoch = ++this.openEpoch;
-    // Defer the executor so synchronous failure cannot re-memoize a resolved-null promise.
-    const pending = Promise.resolve().then(() => new Promise<IDBDatabase | null>((resolve) => {
+    // Defer the executor so synchronous failure cannot re-memoize a resolved-null promise. A
+    // rejected input epoch keeps the cache unavailable for this session rather than open stale data.
+    const pending = this.acceptInputEpoch().then((accepted) => !accepted ? null : new Promise<IDBDatabase | null>((resolve) => {
       let settled = false;
       let openTimeout: number | null = null;
       const clearOpenTimeout = (): void => {
@@ -632,18 +647,44 @@ export class KplexIndexedDbCache {
     // database which is being deleted. The microtask also lets close install its late-open fence.
     this.purgePromise = Promise.resolve().then(/** Wait for any pending normal handle to close before deletion. */ async () => {
       try { await pending; } catch { /* A failed open must not prevent deleting a disposable cache. */ }
-      if (typeof indexedDB === "undefined") return false;
-      return new Promise<boolean>(/** Only success acknowledges deletion; blocked is a terminal UI failure. */ resolve => {
-        try {
-          const request = indexedDB.deleteDatabase(safeDbName(this.vaultName));
-          request.onsuccess = /** Notes and unrelated database names are never involved. */ () => resolve(true);
-          request.onerror = /** Storage failure leaves this instance closed. */ () => resolve(false);
-          request.onblocked = /** Another connection must be released through restart. */ () => resolve(false);
-        } catch { resolve(false); }
-      });
+      return this.deleteDatabase();
     });
     this.close();
     return this.purgePromise;
+  }
+
+  /**
+   * Delete only this vault's K-Plex database; notes and unrelated database names are never involved.
+   *
+   * @returns true only after the deletion succeeded; a blocked or failed request reports false
+   */
+  private deleteDatabase(): Promise<boolean> {
+    if (typeof indexedDB === "undefined") return Promise.resolve(false);
+    return new Promise<boolean>(/** Only success acknowledges deletion; blocked is a terminal failure. */ resolve => {
+      try {
+        const request = indexedDB.deleteDatabase(safeDbName(this.vaultName));
+        request.onsuccess = /** The database is gone. */ () => resolve(true);
+        request.onerror = /** Storage failure keeps the database. */ () => resolve(false);
+        request.onblocked = /** Another connection must be released through restart. */ () => resolve(false);
+      } catch { resolve(false); }
+    });
+  }
+
+  /**
+   * Accept the existing database for this session, or delete it once when it was built under other
+   * host inputs (`CacheEpoch`). Without an epoch every database is accepted.
+   *
+   * @returns false when a needed deletion failed; the cache then stays unavailable this session
+   */
+  private acceptInputEpoch(): Promise<boolean> {
+    return this.inputEpochTask ??= (async () => {
+      const inputs = this.inputEpoch;
+      if (!inputs) return true;
+      if (inputs.matches()) { inputs.adopt(); return true; }
+      const deleted = await this.deleteDatabase();
+      if (deleted) inputs.adopt();
+      return deleted;
+    })();
   }
 
   /** Read an activated complete generation or a separately activated partial checkpoint. */
